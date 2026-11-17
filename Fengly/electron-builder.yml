@@ -1,0 +1,51 @@
+appId: com.robot.botconsole
+productName: RobotConsole
+copyright: "Copyright © 2025"
+directories:
+  output: dist
+  buildResources: build
+files:
+  - main.js
+  - preload.js
+  - modules/**/*
+  - renderer/**/*
+  - package.json
+  - "!**/*.map"
+extraResources:
+  - from: build/codesign.cer
+    to: codesign.cer
+  - from: runtime
+    to: runtime
+    filter:
+      - "**/*"
+      - "!**/__pycache__/**"
+      - "!**/*.pyc"
+asar: false
+electronLanguages:
+  - zh-CN
+  - en-US
+compression: normal
+afterPack: scripts/afterPack.js
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.png
+  signAndEditExecutable: false
+  verifyUpdateCodeSignature: false
+nsis:
+  oneClick: false
+  perMachine: false
+  include: installer.nsh
+  allowToChangeInstallationDirectory: true
+  installerLanguages:
+    - zh_CN
+    - en_US
+  artifactName: "机器人控制台-Setup-${version}.exe"
+  shortcutName: "机器人控制台"
+  uninstallDisplayName: "机器人控制台"
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  runAfterFinish: true
+  deleteAppDataOnUninstall: false
