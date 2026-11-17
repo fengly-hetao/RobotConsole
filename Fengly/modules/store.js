@@ -10,7 +10,7 @@ const DEFAULTS = {
   animations: true,
   napcatApiPort: 16200,  // NapCat HTTP API 端口（程序调用群文件用）
   updateGroupId: '',  // QQ 群号：程序从该群文件读取 update.json（推荐，发群即生效）
-  updateUrl: 'https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/update.json',  // 更新源地址（放 update.json 的目录），留空 = 关闭检查
+  updateUrl: 'https://github.com/fengly-hetao/RobotConsole',  // 更新源地址（放 update.json 的目录），留空 = 关闭检查
   webui: {
     host: '127.0.0.1',
     port: 8899,  // 8899 避开 Windows 端口排除范围 6002-6101（6099 会被系统保留导致 EACCES）
