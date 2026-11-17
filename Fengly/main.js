@@ -591,9 +591,15 @@ function bootstrap() {
         const dlDir = path.join(app.getPath('temp'), 'RobotConsole-update');
         fs.mkdirSync(dlDir, { recursive: true });
         send({ stage: 'download', percent: 0, text: '正在下载更新包…' });
-        const r = await updater.downloadUpdate(dlUrl, dlDir, (size) => {
-          send({ stage: 'download', percent: 100, text: '下载完成（' + (size / 1024 / 1024).toFixed(1) + ' MB）' });
+        const r = await updater.downloadUpdate(dlUrl, dlDir, (received, total) => {
+          if (total && total > 0) {
+            const pct = Math.min(99, Math.round((received / total) * 100));
+            send({ stage: 'download', percent: pct, text: '正在下载更新包… ' + pct + '%（' + (received / 1048576).toFixed(1) + ' / ' + (total / 1048576).toFixed(1) + ' MB）' });
+          } else {
+            send({ stage: 'download', percent: 50, text: '正在下载更新包… ' + (received / 1048576).toFixed(1) + ' MB' });
+          }
         });
+        send({ stage: 'download', percent: 100, text: '下载完成（' + (r.size / 1048576).toFixed(1) + ' MB）' });
         let setupPath = r.path;
         // 如果是 zip，自动解压出 exe
         if (/\.zip(\.bak)?$/i.test(r.path)) {
@@ -1406,8 +1412,13 @@ JSON 必须包含以下字段：
     // 历史消息/日志/缓存永久保留（用户要求，不再自动清除）
     // 首次启动把签名证书装进用户信任列表（8 秒后，不阻塞）
     setTimeout(() => installTrustCert(), 8000);
-    // 桌面快捷方式：没有就自动创建（20 秒后）
-    setTimeout(() => ensureDesktopShortcut(), 20000);
+    // 桌面快捷方式：默认【不创建】。产品目录约定为「所有文件只放本程序目录」，
+    // 不往用户桌面写东西。需要的话可在 settings 里设置 createDesktopShortcut=true。
+    try {
+      if (store.get('createDesktopShortcut') === true) {
+        setTimeout(() => ensureDesktopShortcut(), 20000);
+      }
+    } catch (e) {}
     // 更新检查：启动 15 秒后首查，之后每 30 分钟；窗口聚焦时补查（10 分钟节流）
     setTimeout(() => runUpdateCheck(false), 15000);
     setInterval(() => runUpdateCheck(false), 30 * 60 * 1000);

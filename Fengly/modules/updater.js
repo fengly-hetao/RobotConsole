@@ -158,46 +158,112 @@ async function checkUpdate(feedUrl, currentVersion) {
 // 用全局 fetch（走 Chromium 网络栈 → 自动使用系统代理），
 // 所以开了代理/节点的用户下载也能通。
 async function downloadUpdate(dlUrl, destDir, onProgress) {
-  let buf = null;
+  fs.mkdirSync(destDir, { recursive: true });
+
+  // 先确定保存文件名（从 URL 推断；123 网盘直链形如 xxx.exe）
   let finalUrl = dlUrl;
   let contentType = '';
+  let name = 'update-download';
 
+  const guessName = (u) => {
+    const bare = String(u).split('?')[0];
+    const bn = path.basename(bare);
+    if (bn && /\.\w{2,5}$/.test(bn)) {
+      try { return decodeURIComponent(bn); } catch (e) { return bn; }
+    }
+    return '';
+  };
+
+  const initial = guessName(dlUrl);
+  if (initial) name = initial;
+
+  // ===== 优先：流式下载（不把 500MB+ 全读进内存，边下边写盘）=====
   try {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 10 * 60 * 1000); // 大文件给 10 分钟
+    const timer = setTimeout(() => ctrl.abort(), 30 * 60 * 1000); // 大文件给 30 分钟
     const res = await fetch(dlUrl, { signal: ctrl.signal, headers: { 'User-Agent': UA } });
     clearTimeout(timer);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     finalUrl = res.url || dlUrl;
     contentType = res.headers.get('content-type') || '';
-    const ab = await res.arrayBuffer();
-    buf = Buffer.from(ab);
+
+    // 文件名：优先 URL，其次 Content-Disposition
+    const fromUrl = guessName(finalUrl);
+    if (fromUrl) name = fromUrl;
+    else {
+      const cd = res.headers.get('content-disposition') || '';
+      const mcd = /filename\*?=(?:UTF-8'')?["']?([^"';]+)/i.exec(cd);
+      if (mcd) { try { name = decodeURIComponent(mcd[1]); } catch (e) { name = mcd[1]; } }
+    }
+    if (!/\.\w{2,5}$/.test(name)) {
+      name = 'update-' + Date.now() + (/zip/i.test(contentType) ? '.zip' : '.exe');
+    }
+    name = fixBakSuffix(name);
+
+    const savePath = path.join(destDir, name);
+    const expected = parseInt(res.headers.get('content-length') || '0', 10);
+    let received = 0;
+    let lastReport = 0;
+
+    if (res.body && typeof res.body.getReader === 'function') {
+      // 流式写盘
+      const reader = res.body.getReader();
+      const out = fs.createWriteStream(savePath);
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = Buffer.from(value);
+          received += chunk.length;
+          if (!out.write(chunk)) {
+            await new Promise((r) => out.once('drain', r));
+          }
+          const now = Date.now();
+          if (onProgress && now - lastReport > 300) {
+            lastReport = now;
+            onProgress(received, expected);
+          }
+        }
+      } finally {
+        await new Promise((r) => out.end(r));
+      }
+    } else {
+      // 环境不支持 stream → 退回一次性读取
+      const ab = await res.arrayBuffer();
+      const buf = Buffer.from(ab);
+      received = buf.length;
+      fs.writeFileSync(savePath, buf);
+    }
+
+    if (received < 1024) throw new Error('下载内容异常（' + received + ' 字节）');
+    // 有 Content-Length 时校验完整性（防止代理截断）
+    if (expected > 0 && received !== expected) {
+      throw new Error('下载不完整：期望 ' + expected + ' 字节，实际 ' + received + ' 字节');
+    }
+    if (onProgress) onProgress(received, expected || received);
+    return { path: savePath, size: received, name };
   } catch (e) {
-    // fetch 失败（例如某些直链不支持）/ 被中断 → 回退到原生 http 下载
+    console.error('[updater] 流式下载失败，回退整块下载: ' + e.message);
+  }
+
+  // ===== 回退：整块下载（小文件或 stream 不可用时）=====
+  let buf = null;
+  try {
     const r = await fetchBuffer(dlUrl);
     if (r.status !== 200) throw new Error('下载失败 HTTP ' + r.status);
     buf = r.body;
     finalUrl = r.finalUrl;
+  } catch (e) {
+    throw new Error('下载失败: ' + (e.message || String(e)));
   }
-
   if (!buf || buf.length < 1024) throw new Error('下载内容异常（' + (buf ? buf.length : 0) + ' 字节）');
-  fs.mkdirSync(destDir, { recursive: true });
 
-  // 从 Content-Disposition 或 URL 推断文件名
-  let name = 'update-download';
-  const mcd = null; // fetch 已在上面处理 headers，这里用 URL 兜底
-  const u = finalUrl.split('?')[0];
-  const bn = path.basename(u);
-  if (bn && (bn.includes('.') || /\.\w{2,5}$/.test(bn))) name = decodeURIComponent(bn);
-  if (!/\.\w{2,5}$/.test(name) && /zip|exe|msi/i.test(contentType)) {
-    name = 'update-' + Date.now() + (/zip/i.test(contentType) ? '.zip' : '.exe');
-  }
-  // 123 云盘会给 .exe 自动加 .bak 后缀（xxx.exe.bak），这里修正回 .exe
+  const fromUrl2 = guessName(finalUrl);
+  if (fromUrl2) name = fromUrl2;
   name = fixBakSuffix(name);
-
   const savePath = path.join(destDir, name);
   fs.writeFileSync(savePath, buf);
-  if (onProgress) onProgress(buf.length);
+  if (onProgress) onProgress(buf.length, buf.length);
   return { path: savePath, size: buf.length, name };
 }
 
