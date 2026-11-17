@@ -1,0 +1,50 @@
+# ===== 依赖与构建产物 =====
+node_modules/
+dist/
+.cache/
+*.log
+
+# ===== 运行时第三方二进制（体积大，且非本项目版权）=====
+# 这些需要用户自行从 NapCat / 腾讯官方获取
+runtime/napcat/
+runtime/qq/
+runtime/tools/
+runtime/win64/
+runtime/backups/
+runtime/napcat-versions/
+
+# ===== 敏感信息（绝对不要提交）=====
+# 代码签名私钥
+*.pfx
+*.p12
+*.cer
+*.key
+# 环境变量（含 API Key / QQ 号）
+.env
+.env.local
+.env.prod
+.env.*.local
+# 用户数据
+runtime/tianlu_bot/data/
+runtime/tianlu_bot/ai_data/
+runtime/tianlu_bot/logs/
+runtime/tianlu_bot/admin_whitelist.json
+runtime/tianlu_bot/favor.json
+runtime/tianlu_bot/birthdays.json
+runtime/tianlu_bot/fortune.json
+runtime/tianlu_bot/*.db
+runtime/tianlu_bot/*.db-*
+
+# ===== 编辑器 / 系统 =====
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# ===== 临时文件 =====
+*.tmp
+*.bak
+tmp/
+temp/

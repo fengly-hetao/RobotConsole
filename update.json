@@ -1,0 +1,6 @@
+{
+  "version": "1.9.0",
+  "url": "https://github.com/你的用户名/仓库名/releases/download/v1.9.0/机器人控制台-Setup-1.9.0.exe",
+  "notes": "v1.9.0 首个开源版本\n\n新增：\n· GitHub 更新源（自动走国内镜像，无需挂代理）\n· 独立识图 Key 配置（智谱 GLM-4V）\n· 功能开关自动初始化（修复消息/语音/音乐页面全空）\n· NapCat HTTP API 自动配置（Q群更新可用）\n· 环境诊断工具 / 彻底卸载工具 / 独立启动器\n\n修复：\n· NapCat 启动失败（node_modules 缺失）\n· 进程清理误杀其它 Electron 程序\n· 端口被系统保留导致绑定失败\n· 白屏（虚拟显卡环境）\n· 智谱余额查询 404\n\n⚠️ 请把上面的 url 改成你自己的下载地址后再发布。",
+  "force": false
+}
