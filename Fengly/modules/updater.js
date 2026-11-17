@@ -268,10 +268,35 @@ async function downloadUpdate(dlUrl, destDir, onProgress) {
 }
 
 // 修正 123 云盘的 .bak 后缀：xxx.exe.bak → xxx.exe
+// 修正被 CDN / 浏览器改坏的文件后缀。
+// 123 网盘的坑：
+//   ① 响应头 Content-disposition 带 .bak       → xxx.exe.bak
+//   ② 浏览器按 MIME 猜后缀，application/octet-stream 在手机上会被存成 .apk
+//   ③ 有些 CDN 会加 .download / .bin / .tmp
+// 这里统一纠正回真实后缀（以文件名里出现的第一个真实扩展名为准）。
 function fixBakSuffix(fileName) {
-  const s = String(fileName || '');
-  if (/\.bak$/i.test(s)) return s.replace(/\.bak$/i, '');
-  return s;
+  const s = String(fileName || '').trim();
+  if (!s) return s;
+
+  // 去掉连续的尾部垃圾后缀：.bak / .apk / .download / .bin / .tmp / .part / .crdownload
+  // 只要前面还存在 .exe/.zip/.msi 就恢复它
+  const junk = /\.(bak|apk|download|bin|tmp|part|crdownload|unknown)$/i;
+  let out = s;
+  while (junk.test(out)) {
+    const stripped = out.replace(junk, '');
+    // 剥掉后仍需以真实后缀结尾，否则停止（避免把 legit 文件名切成空）
+    if (/\.(exe|zip|msi|7z|rar)$/i.test(stripped)) {
+      out = stripped;
+    } else {
+      break;
+    }
+  }
+  // 兜底：若名字里带 .exe 但结尾是垃圾后缀，直接截断到 .exe
+  if (!/\.(exe|zip|msi|7z|rar)$/i.test(out)) {
+    const m = /\.(exe|zip|msi|7z|rar)(?=\.)/i.exec(out);
+    if (m) out = out.slice(0, m.index + m[0].length);
+  }
+  return out;
 }
 
 // 如果下载到的是 zip，解出里面的 exe（自动处理 .bak 后缀）
