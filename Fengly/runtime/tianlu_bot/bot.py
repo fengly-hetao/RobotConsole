@@ -28,11 +28,37 @@ PLUGINS = [
     "core",
     "system",
     "games",
+    "tools",
     "ai_chat",
     "monitor",
     "poke",
     "feedback",
 ]
+
+# ── 插件启用配置 ──────────────────────────────────────────────
+# plugins.json 由「插件管理」界面维护，格式：
+#   { "disabled": ["games"], "extra": ["my_plugin"] }
+# - disabled: 被禁用的内置插件（不加载）
+# - extra:    用户额外安装的插件（额外加载）
+# 文件不存在或解析失败时，退回到上面的默认列表，保证机器人一定能起来。
+_plugin_cfg_path = BASE_DIR / "plugins.json"
+_disabled, _extra = set(), []
+try:
+    if _plugin_cfg_path.exists():
+        import json as _json
+        _cfg = _json.loads(_plugin_cfg_path.read_text(encoding="utf-8"))
+        if isinstance(_cfg.get("disabled"), list):
+            _disabled = {str(x) for x in _cfg["disabled"]}
+        if isinstance(_cfg.get("extra"), list):
+            _extra = [str(x) for x in _cfg["extra"]]
+        logger.info(f"📦 插件配置已读取：禁用 {len(_disabled)} 个，额外 {len(_extra)} 个")
+except Exception as _e:
+    logger.warning(f"⚠️ plugins.json 读取失败，使用默认插件列表：{_e}")
+
+PLUGINS = [p for p in PLUGINS if p not in _disabled]
+for _p in _extra:
+    if _p not in PLUGINS:
+        PLUGINS.append(_p)
 
 for plugin in PLUGINS:
     try:

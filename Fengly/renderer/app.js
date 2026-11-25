@@ -15,14 +15,13 @@ const ICONS = {
 };
 
 const NAV = [
-  { id: 'home', icon: 'home' },
-  { id: 'webui', icon: 'webui' },
-  { id: 'code', icon: 'code' },
-  { id: 'messages', icon: 'about' },
-  { id: 'toolbox', icon: 'config' },
-  { id: 'persona', icon: 'about' },
-  { id: 'feedback', icon: 'about' },
-  { id: 'settings', icon: 'settings' }
+  { id: 'home', icon: 'home' },        // 首页：一键启动 + 状态总览
+  { id: 'webui', icon: 'webui' },      // 网页控制台：NapCat WebUI
+  { id: 'plugins', icon: 'config' },   // 插件：NoneBot + NapCat 插件管理
+  { id: 'messages', icon: 'about' },   // 消息：聊天记录 + 语音 + 音乐
+  { id: 'persona', icon: 'about' },    // 人格：名字/性格/口头禅
+  { id: 'toolbox', icon: 'code' },     // 工具：配置/代码/备份/点歌
+  { id: 'settings', icon: 'settings' } // 设置：模型/网络/更新/关于
 ];
 
 const QUOTES = [
@@ -137,6 +136,11 @@ function startQuotes() {
 
 const state = {
   settings: null,
+  currentPage: '',          // 当前页面（避免同页重复渲染）
+  pluginTab: 'nonebot',     // 插件页当前标签
+  pluginsData: null,        // 插件列表缓存
+  tbEditor: null,          // 工具箱代码编辑器实例
+  tbCurrentFile: '',      // 工具箱当前编辑的文件
   appInfo: null,
   runtimePath: '',
   health: null,
@@ -226,19 +230,35 @@ function renderNav() {
   setLang(state.settings.language || 'zh');
 }
 function navigate(page) {
+  // 同一页面重复点击直接返回，避免无谓重渲染
+  const cur = document.getElementById('page-' + page);
+  if (state.currentPage === page && cur && cur.classList.contains('active')) return;
+  state.currentPage = page;
+
+  // 高亮与可见性切换（同步、极快）——保证点击立即有反馈
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.page === page));
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  const target = document.getElementById('page-' + page);
-  if (target) target.classList.add('active');
-  if (page === 'webui') renderWebui();
-  if (page === 'code') renderCode();
-  if (page === 'settings') renderSettings();
-  if (page === 'feedback') renderFeedback();
-  if (page === 'messages') renderMessages();
-  if (page === 'toolbox') renderToolbox();
-  if (page === 'persona') renderPersona();
-  if (page === 'home') renderHome();
+  if (cur) cur.classList.add('active');
+
+  // 渲染推迟到下一帧：先让高亮画出来，再做重活，点击就不会"顿一下"
+  requestAnimationFrame(() => {
+    try {
+      const fn = PAGE_RENDERERS[page];
+      if (fn) fn();
+    } catch (e) { console.error('[nav] render ' + page + ' failed', e); }
+  });
 }
+
+// 页面 → 渲染函数映射（新增页面只需在这里加一行）
+const PAGE_RENDERERS = {
+  home: () => renderHome(),
+  webui: () => renderWebui(),
+  messages: () => renderMessages(),
+  toolbox: () => renderToolbox(),
+  plugins: () => renderPlugins(),
+  persona: () => renderPersona(),
+  settings: () => renderSettings()
+};
 
 /* ============ 首页 ============ */
 async function renderHome() {
@@ -897,6 +917,17 @@ async function renderResources() {
   if (!el.dataset.ready) {
     el.innerHTML = `      <div class="grid grid-4" id="res-metrics"></div>
       <div class="grid grid-2" style="margin-top:16px">
+        <div class="card" style="margin-bottom:14px">
+          <h3>🐧 <span>QQ 版本与更新</span></h3>
+          <p class="hint">检查本地 QQ 版本是否需要更新。NapCat 需要特定 QQ 版本，版本不匹配会导致扫码失败或启动不了。</p>
+          <div id="qq-version-info" style="margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--bg-2);font-size:13px">
+            <div style="opacity:.7">点「检查版本」获取信息</div>
+          </div>
+          <div class="btn-row" style="margin-top:10px">
+            <button class="btn sm primary" id="btn-qq-check">🔄 检查 QQ 版本</button>
+            <button class="btn sm" id="btn-qq-wizard">🧭 打开更新向导</button>
+          </div>
+        </div>
         <div class="card"><h3>🖥 <span data-i18n="resources.os"></span></h3><table class="resource-table" id="res-os"></table></div>
         <div class="card"><h3>🌐 <span data-i18n="resources.interfaces"></span></h3><table class="resource-table" id="res-net"></table></div>
       </div>`;
@@ -1232,6 +1263,34 @@ async function renderSettings() {
   document.getElementById('btn-py-detect').onclick = async () => { const p = await bridge.detectPython(); document.getElementById('set-py').value = p ? p.path : ''; document.getElementById('py-status').textContent = p ? '✅ ' + p.path : '⚠️ 未检测到'; };
   document.querySelectorAll('button[data-url]').forEach(b => { b.onclick = () => openLinkSafe(b.dataset.url); });
   document.getElementById('btn-py-setup').onclick = () => { toast(t('home.setup.python') + '…'); bridge.setupPython().then(r => { toast(r.ok ? 'Python OK' : 'Python 配置完成（有警告）', r.ok ? 'ok' : 'err'); renderSettings(); }); };
+  // QQ 版本检查按钮
+  const qqCheckBtn = document.getElementById('btn-qq-check');
+  if (qqCheckBtn) {
+    qqCheckBtn.onclick = async () => {
+      const box = document.getElementById('qq-version-info');
+      if (box) box.innerHTML = '<span style="opacity:.7">正在检查…</span>';
+      qqCheckBtn.disabled = true;
+      const r = await bridge.qqCheck({ protocol: 'NapCat 4.18.41' });
+      qqCheckBtn.disabled = false;
+      if (!r || !r.ok) {
+        if (box) box.innerHTML = '<span style="color:var(--err)">检查失败：' + esc((r && r.error) || '未知错误') + '</span>';
+        return;
+      }
+      const local = (r.local && r.local.version) || '未知';
+      const compat = r.compat || {};
+      const statusColor = r.needUpdate ? 'var(--warn, #f5b942)' : 'var(--ok, #6fdd8f)';
+      const statusText = r.needUpdate ? ('有新版 ' + r.latest + '，建议更新') : '已是最新版本';
+      if (box) box.innerHTML =
+        '<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>当前版本</span><b>' + esc(local) + '</b></div>' +
+        '<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>官网最新</span><b>' + esc(r.latest || '未知') + '</b>' + (r.updateDate ? ' <small style=\"opacity:.6\">(' + esc(r.updateDate) + ')</small>' : '') + '</div>' +
+        '<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>状态</span><b style=\"color:' + statusColor + '\">' + esc(statusText) + '</b></div>' +
+        '<div style="display:flex;justify-content:space-between"><span>协议端兼容</span><b style=\"color:' + (compat.ok ? 'var(--ok,#6fdd8f)' : 'var(--err)') + '\">' + (compat.ok ? '兼容' : '不兼容') + '</b></div>' +
+        (compat.note ? '<div style=\"opacity:.6;font-size:11.5px;margin-top:6px\">' + esc(compat.note) + '</div>' : '');
+      state.qqCheckResult = r;
+    };
+  }
+  const qqWizBtn = document.getElementById('btn-qq-wizard');
+  if (qqWizBtn) qqWizBtn.onclick = () => openQQWizard('manual');
   document.getElementById('btn-net-apply').onclick = async () => {
     const cfg = { webuiPort: +document.getElementById('set-webuiPort').value, botPort: +document.getElementById('set-botPort').value, webuiHost: '127.0.0.1', botHost: '127.0.0.1', proxy: document.getElementById('set-proxy').value };
     const results = await bridge.applyNetwork(cfg);
@@ -1715,7 +1774,15 @@ function renderWall(list) {
 async function renderToolbox() {
   const el = document.getElementById('page-toolbox');
   if (!el.dataset.ready) {
+    // 子标签：常用工具 / 代码编辑 / 反馈
     el.innerHTML = `
+      <div class="tab-bar" id="tb-tabs" style="margin-bottom:16px">
+        <button class="tab-btn active" data-tbtab="main">🧰 常用工具</button>
+        <button class="tab-btn" data-tbtab="code">📝 代码编辑</button>
+        <button class="tab-btn" data-tbtab="feedback">💬 反馈</button>
+        <button class="tab-btn" data-tbtab="commands">📋 命令速查</button>
+      </div>
+      <div class="tb-panel" id="tb-panel-main">
       <div class="card" style="margin-bottom:16px">
         <h3>⚙️ <span data-i18n="features.hint"></span> <small style="opacity:.6;font-weight:400" data-i18n="features.hint2"></small></h3>
         <div id="tb-feature-switches"></div>
@@ -1782,7 +1849,69 @@ async function renderToolbox() {
         <p class="hint" data-i18n="toolbox.audio.hint"></p>
         <div class="btn-row"><button class="btn sm primary" id="btn-audio-upload" data-i18n="toolbox.audio.upload"></button></div>
         <div id="tb-audio-list"></div>
-      </div>`;
+        </div>
+      </div><!-- /tb-panel-main -->
+
+      <div class="tb-panel" id="tb-panel-code" style="display:none">
+        <div class="card">
+          <h3>📝 代码编辑器</h3>
+          <p class="hint">直接编辑机器人的配置和插件代码。改完保存后重启机器人生效。</p>
+          <div class="config-layout" style="margin-top:12px">
+            <div class="card file-list" id="tb-code-file-list"></div>
+            <div class="card" style="display:flex;flex-direction:column;min-height:420px">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                <strong id="tb-code-current" style="font-size:13px"></strong>
+                <button class="btn sm primary" id="tb-code-save">保存</button>
+              </div>
+              <div id="tb-code-editor" style="flex:1;overflow:auto"></div>
+            </div>
+          </div>
+        </div>
+      </div><!-- /tb-panel-code -->
+
+      <div class="tb-panel" id="tb-panel-feedback" style="display:none">
+        <div class="card">
+          <h3>💬 反馈</h3>
+          <p class="hint">提交问题或建议，作者会收到通知。</p>
+          <div id="tb-feedback-body" style="margin-top:12px"></div>
+        </div>
+      </div><!-- /tb-panel-feedback -->
+
+      <div class="tb-panel" id="tb-panel-commands" style="display:none">
+        <div class="card">
+          <h3>📋 命令速查</h3>
+          <p class="hint">机器人能听懂的所有命令。在群里发消息时先 @机器人，再跟上命令即可。</p>
+          <div class="btn-row" style="margin-top:10px">
+            <button class="btn primary sm" id="tb-cmd-copyall">📄 复制全部（发群里用）</button>
+            <button class="btn sm" id="tb-cmd-refresh">🔄 刷新</button>
+          </div>
+          <div style="margin-top:14px;padding:10px 14px;border-radius:10px;background:var(--bg-2);font-size:13px;line-height:1.8">
+            <b>用法示例：</b><br>
+            <code>@机器人 掷骰子</code><br>
+            <code>@机器人 签到</code><br>
+            <code>@机器人 猜大小 大</code> ← 带参数的命令，参数跟在后面
+          </div>
+        </div>
+        <div id="tb-cmd-body"></div>
+      </div><!-- /tb-panel-commands -->`;
+    // 子标签切换
+    const tbTabs = document.getElementById('tb-tabs');
+    if (tbTabs) {
+      tbTabs.querySelectorAll('[data-tbtab]').forEach(btn => {
+        btn.onclick = () => {
+          const tab = btn.dataset.tbtab;
+          tbTabs.querySelectorAll('[data-tbtab]').forEach(b => b.classList.toggle('active', b === btn));
+          ['main', 'code', 'feedback', 'commands'].forEach(t => {
+            const panel = document.getElementById('tb-panel-' + t);
+            if (panel) panel.style.display = (t === tab) ? '' : 'none';
+          });
+          // 首次切到某个面板时才渲染，避免无谓开销
+          if (tab === 'code' && !state.tbCodeReady) { state.tbCodeReady = true; initToolboxCode(); }
+          if (tab === 'feedback' && !state.tbFbReady) { state.tbFbReady = true; initToolboxFeedback(); }
+          if (tab === 'commands' && !state.tbCmdReady) { state.tbCmdReady = true; initToolboxCommands(); }
+        };
+      });
+    }
     setLang(state.settings.language || 'zh');
     document.getElementById('tb-export').onclick = async () => { const r = await bridge.exportCode(); r.ok ? toast(t('toolbox.code.ok') + (r.path || '')) : (r.canceled || toast(t('toolbox.code.fail') + (r.error || ''), 'err')); };
     document.getElementById('tb-import').onclick = async () => { const r = await bridge.importCode(); r.ok ? toast(t('toolbox.code.importOk')) : (r.canceled || toast(t('toolbox.code.fail') + (r.error || ''), 'err')); };
@@ -1995,6 +2124,522 @@ async function renderAudioList() {
   });
 }
 
+
+/* ============ 工具箱 · 代码编辑面板 ============ */
+async function initToolboxCode() {
+  const list = document.getElementById('tb-code-file-list');
+  const editor = document.getElementById('tb-code-editor');
+  const cur = document.getElementById('tb-code-current');
+  if (!list || !editor) { console.warn('[tb-code] 面板节点缺失'); return; }
+
+  list.innerHTML = '<p class="hint" style="padding:8px">正在读取…</p>';
+  let files = [];
+  try {
+    const r = await bridge.listRuntimeFiles('tianlu_bot');
+    files = Array.isArray(r) ? r : (r && r.files) || [];
+  } catch (e) { console.error('[tb-code] 列文件失败', e); }
+
+  const names = files.map(f => (typeof f === 'string' ? f : (f && (f.name || f.file || f.path)) || '')).filter(Boolean);
+  const editable = names.filter(n => /\.(py|env|json|toml|txt|md|cfg|ini|yaml|yml)$/i.test(n));
+
+  if (!editable.length) {
+    list.innerHTML = '<p class="hint" style="padding:8px">没有可编辑的文件</p>';
+    return;
+  }
+
+  list.innerHTML = editable.map(n => '<div class="bk-file" data-file="' + esc(n) + '">📄 ' + esc(n) + '</div>').join('');
+
+  const openFile = (name) => {
+    list.querySelectorAll('[data-file]').forEach(b => b.classList.toggle('active', b.dataset.file === name));
+    if (cur) cur.textContent = name;
+    state.tbCurrentFile = name;
+
+    bridge.readFile('tianlu_bot/' + name).then((content) => {
+      content = content || '';
+      const lang = /\.py$/i.test(name) ? 'python'
+        : /\.json$/i.test(name) ? 'json'
+        : /\.(yml|yaml)$/i.test(name) ? 'yaml'
+        : /\.md$/i.test(name) ? 'markdown'
+        : 'plaintext';
+
+      ensureMonaco(() => {
+        if (!state.tbEditor) {
+          editor.innerHTML = '';
+          state.tbEditor = monaco.editor.create(editor, {
+            value: content, language: lang, theme: 'vs-dark',
+            automaticLayout: true, fontSize: 13, minimap: { enabled: false },
+            scrollBeyondLastLine: false
+          });
+        } else {
+          const model = state.tbEditor.getModel();
+          if (model) {
+            monaco.editor.setModelLanguage(model, lang);
+            model.setValue(content);
+          }
+        }
+        // ★ 关键：面板创建时父容器可能尺寸为 0，Monaco 会塌陷成 5x5。
+        //   这里强制重新测量一次，并延迟再补一次（等布局稳定）。
+        state.tbEditor.layout();
+        setTimeout(() => { try { state.tbEditor.layout(); } catch (e) {} }, 60);
+        setTimeout(() => { try { state.tbEditor.layout(); } catch (e) {} }, 300);
+      });
+    }).catch((e) => {
+      editor.innerHTML = '<p class="hint" style="padding:8px;color:var(--err)">读取失败：' + esc(e.message) + '</p>';
+    });
+  };
+
+  list.querySelectorAll('[data-file]').forEach(b => { b.onclick = () => openFile(b.dataset.file); });
+  openFile(editable[0]);
+
+  const saveBtn = document.getElementById('tb-code-save');
+  if (saveBtn) {
+    saveBtn.onclick = async () => {
+      const name = state.tbCurrentFile;
+      if (!name) { toast('请先选择文件', 'err'); return; }
+      if (!state.tbEditor) { toast('编辑器还没准备好', 'err'); return; }
+      const val = state.tbEditor.getValue();
+      try {
+        const r = await bridge.writeFile('tianlu_bot/' + name, val);
+        if (r && r.ok !== false) toast('已保存 ' + name, 'ok');
+        else toast('保存失败：' + ((r && r.error) || '未知错误'), 'err');
+      } catch (e) { toast('保存失败：' + e.message, 'err'); }
+    };
+  }
+}
+/* ============ 工具箱 · 命令速查面板 ============ */
+async function initToolboxCommands() {
+  const body = document.getElementById('tb-cmd-body');
+  if (!body) return;
+
+  body.innerHTML = '<p class="hint" style="padding:10px">正在加载命令列表…</p>';
+
+  const r = await bridge.commandsList();
+  if (!r || !r.ok) {
+    body.innerHTML = '<div class="card"><p style="color:var(--err)">加载失败：' + esc((r && r.error) || '未知错误') + '</p></div>';
+    return;
+  }
+
+  const list = r.list || [];
+  const groups = {};
+  for (const it of list) {
+    const g = it.group || '其他';
+    if (!groups[g]) groups[g] = [];
+    groups[g].push(it);
+  }
+
+  const order = ['基础', '实用工具', '游戏', '音频', '其他'];
+  let html = '';
+  for (const gname of order) {
+    const items = groups[gname];
+    if (!items || !items.length) continue;
+    html += `
+      <div class="card" style="margin-bottom:12px">
+        <h3>${esc(gname)}${gname === '游戏' ? '（' + items.length + ' 个）' : ''}</h3>
+        <div class="cmd-grid">
+          ${items.map(it => {
+            const cost = it.cost ? `<span class="cmd-cost">${it.cost} 金币${it.win ? ' · 赢 ' + it.win : ''}</span>` : '';
+            const param = it.needParam ? `<span class="cmd-param">参数：${esc(it.needParam)}</span>` : '';
+            return `
+              <div class="cmd-item" data-cmd="${esc(it.cmd)}">
+                <div class="cmd-line">
+                  <code class="cmd-code">@机器人 ${esc(it.cmd)}</code>
+                  <button class="btn-link cmd-copy" data-copy="${esc(it.cmd)}">复制</button>
+                </div>
+                <div class="cmd-desc">${esc(it.desc || '')}</div>
+                ${(param || cost) ? `<div class="cmd-meta">${param}${cost}</div>` : ''}
+              </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+  }
+  body.innerHTML = html || '<div class="card"><p class="hint">没有找到命令</p></div>';
+
+  // 单条复制
+  body.querySelectorAll('.cmd-copy').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      copyText('@机器人 ' + btn.dataset.copy);
+      toast('已复制命令', 'ok');
+    };
+  });
+
+  // 复制全部
+  const copyAll = document.getElementById('tb-cmd-copyall');
+  if (copyAll) {
+    copyAll.onclick = async () => {
+      const t = await bridge.commandsText();
+      if (t && t.ok) {
+        copyText(t.text);
+        toast('完整命令表已复制，可直接发群里', 'ok');
+      } else {
+        toast('生成失败', 'err');
+      }
+    };
+  }
+
+  // 刷新
+  const refresh = document.getElementById('tb-cmd-refresh');
+  if (refresh) {
+    refresh.onclick = async () => {
+      state.tbCmdReady = false;
+      await initToolboxCommands();
+    };
+  }
+}
+/* ============ 工具箱 · 反馈面板 ============ */
+async function initToolboxFeedback() {
+  const box = document.getElementById('tb-feedback-body');
+  if (!box) { console.warn('[tb-fb] 面板节点缺失'); return; }
+
+  box.innerHTML = `
+    <div class="field">
+      <label>问题类型</label>
+      <select id="tb-fb-type">
+        <option value="bug">🐛 功能异常</option>
+        <option value="suggest">💡 功能建议</option>
+        <option value="other">❓ 其他</option>
+      </select>
+    </div>
+    <div class="field" style="margin-top:10px">
+      <label>详细描述</label>
+      <textarea id="tb-fb-text" rows="6" placeholder="请描述遇到的问题或你的建议…" style="width:100%;resize:vertical"></textarea>
+    </div>
+    <div class="btn-row" style="margin-top:10px">
+      <button class="btn primary" id="tb-fb-submit">提交反馈</button>
+    </div>
+    <div id="tb-fb-log" style="margin-top:12px"></div>`;
+
+  const btn = document.getElementById('tb-fb-submit');
+  const log = document.getElementById('tb-fb-log');
+  btn.onclick = async () => {
+    const type = document.getElementById('tb-fb-type').value;
+    const text = document.getElementById('tb-fb-text').value.trim();
+    if (!text) { toast('请填写描述', 'err'); return; }
+    btn.disabled = true; btn.textContent = '提交中…';
+    try {
+      const r = await bridge.feedbackSubmit({ type, text });
+      if (r && r.ok) {
+        toast('反馈已提交', 'ok');
+        document.getElementById('tb-fb-text').value = '';
+        log.innerHTML = '';
+      } else {
+        log.innerHTML = '<p style="color:var(--err)">提交失败：' + esc((r && r.error) || '未知错误') + '</p>';
+      }
+    } catch (e) {
+      log.innerHTML = '<p style="color:var(--err)">提交失败：' + esc(e.message) + '</p>';
+    }
+    btn.disabled = false; btn.textContent = '提交反馈';
+  };
+}
+
+/* ============ QQ 更新向导（5 步） ============ */
+// 触发场景：扫码登录失败 / NapCat 打不开 QQ / 设置里手动检查
+// 每步都要用户点「确定」才继续，最后一步真的下载 QQ 安装包
+const qqWizardState = {
+  open: false,
+  step: 0,
+  data: null,      // qq:check 的返回
+  steps: [],       // 步骤定义
+  downloading: false
+};
+
+async function openQQWizard(reason) {
+  if (qqWizardState.open) return;
+
+  // 1) 拉取检测结果
+  const r = await bridge.qqCheck({ protocol: 'NapCat 4.18.41' });
+  if (!r || !r.ok) { toast('QQ 版本检测失败：' + ((r && r.error) || '未知错误'), 'err'); return; }
+
+  // 2) 拉取步骤定义
+  const ws = await bridge.qqWizardSteps();
+  if (!ws || !ws.ok) { toast('加载向导失败', 'err'); return; }
+
+  qqWizardState.open = true;
+  qqWizardState.step = 0;
+  qqWizardState.data = r;
+  qqWizardState.steps = ws.steps;
+  qqWizardState.reason = reason || '';
+
+  renderQQWizard();
+}
+
+function closeQQWizard() {
+  qqWizardState.open = false;
+  const el = document.getElementById('qq-wizard-mask');
+  if (el) el.remove();
+}
+
+function renderQQWizard() {
+  let mask = document.getElementById('qq-wizard-mask');
+  if (!mask) {
+    mask = document.createElement('div');
+    mask.id = 'qq-wizard-mask';
+    mask.className = 'qq-wiz-mask';
+    document.body.appendChild(mask);
+  }
+
+  const st = qqWizardState;
+  const total = st.steps.length;
+  const cur = st.steps[st.step];
+  if (!cur) { closeQQWizard(); return; }
+
+  const d = st.data || {};
+  const local = (d.local && d.local.version) || '未知';
+  const latest = d.latest || '未知';
+  const updateDate = d.updateDate || '';
+  const compat = d.compat || {};
+
+  // 文案替换
+  const fill = (s) => String(s || '')
+    .replace(/\{local\}/g, local)
+    .replace(/\{latest\}/g, latest)
+    .replace(/\{updateDate\}/g, updateDate)
+    .replace(/\{protocol\}/g, d.protocol || 'NapCat')
+    .replace(/\{expect\}/g, (compat.expect || []).join(' / ') || '未知');
+
+  const isLast = st.step === total - 1;
+  const progress = Math.round(((st.step + 1) / total) * 100);
+
+  mask.innerHTML = `
+    <div class="qq-wiz-box">
+      <div class="qq-wiz-head">
+        <span class="qq-wiz-step">第 ${st.step + 1} / ${total} 步</span>
+        <button class="qq-wiz-close" id="qq-wiz-x">✕</button>
+      </div>
+      <div class="qq-wiz-progress"><div style="width:${progress}%"></div></div>
+      <h3 class="qq-wiz-title">${esc(cur.title)}</h3>
+      ${st.step === 0 ? `
+        <div class="qq-wiz-versions">
+          <div class="qq-vrow"><span>当前版本</span><b>${esc(local)}</b></div>
+          <div class="qq-vrow"><span>最新版本</span><b class="qq-new">${esc(latest)}</b>${updateDate ? `<small>（${esc(updateDate)} 发布）</small>` : ''}</div>
+        </div>` : ''}
+      <div class="qq-wiz-body">${esc(fill(cur.body)).replace(/\n/g, '<br>')}</div>
+      ${st.step === total - 1 ? `
+        <div id="qq-dl-area" style="margin-top:14px"></div>` : ''}
+      <div class="qq-wiz-actions">
+        <button class="btn" id="qq-wiz-cancel">${esc(cur.cancelText || '取消')}</button>
+        <button class="btn primary" id="qq-wiz-ok">${esc(cur.confirmText || '确定')}</button>
+      </div>
+    </div>`;
+
+  document.getElementById('qq-wiz-x').onclick = closeQQWizard;
+  document.getElementById('qq-wiz-cancel').onclick = closeQQWizard;
+
+  const okBtn = document.getElementById('qq-wiz-ok');
+  okBtn.onclick = async () => {
+    if (isLast) {
+      await doQQDownloadAndInstall();
+    } else {
+      qqWizardState.step++;
+      renderQQWizard();
+    }
+  };
+}
+
+async function doQQDownloadAndInstall() {
+  const st = qqWizardState;
+  const area = document.getElementById('qq-dl-area');
+  const okBtn = document.getElementById('qq-wiz-ok');
+  if (st.downloading) return;
+
+  const url = (st.data && st.data.downloadUrl) || '';
+  if (!url) {
+    if (area) area.innerHTML = '<p style="color:var(--err)">拿不到官方下载地址，正在为你打开官网…</p>';
+    await bridge.qqOpenDownloadPage();
+    return;
+  }
+
+  st.downloading = true;
+  okBtn.disabled = true;
+  okBtn.textContent = '下载中…';
+
+  // 监听进度
+  let unsub = null;
+  try {
+    unsub = bridge.onQQDownloadProgress((p) => {
+      if (!area) return;
+      const got = p.got || 0, total = p.total || 0;
+      const pct = total > 0 ? Math.min(99, Math.round(got / total * 100)) : 0;
+      area.innerHTML = `
+        <div style="font-size:13px;margin-bottom:6px">正在下载 QQ 安装包… ${pct}%</div>
+        <div class="qq-dl-bar"><div style="width:${pct}%"></div></div>
+        <div style="font-size:11.5px;opacity:.6;margin-top:4px">${(got/1048576).toFixed(1)} / ${total ? (total/1048576).toFixed(1) : '?'} MB</div>`;
+    });
+  } catch (e) {}
+
+  const r = await bridge.qqDownloadInstaller(url, null);
+  if (unsub) { try { unsub(); } catch (e) {} }
+
+  st.downloading = false;
+  okBtn.disabled = false;
+
+  if (r && r.ok) {
+    if (area) area.innerHTML = `<p style="color:var(--ok,#6fdd8f)">✅ 下载完成（${(r.size/1048576).toFixed(1)} MB）<br><small style="opacity:.7">${esc(r.name)}</small></p>`;
+    okBtn.textContent = '运行安装程序';
+    okBtn.onclick = async () => {
+      const rr = await bridge.qqRunInstaller(r.path);
+      if (rr && rr.ok) {
+        if (area) area.innerHTML += '<p style="margin-top:8px">已启动安装程序，请按提示完成安装。<br>安装完成后重启本程序。</p>';
+        okBtn.textContent = '完成';
+        okBtn.onclick = closeQQWizard;
+      } else {
+        toast('启动安装程序失败：' + ((rr && rr.error) || ''), 'err');
+      }
+    };
+  } else {
+    if (area) area.innerHTML = `<p style="color:var(--err)">下载失败：${esc((r && r.error) || '未知错误')}</p><p style="margin-top:6px">正在为你打开官网下载页…</p>`;
+    await bridge.qqOpenDownloadPage();
+    okBtn.textContent = '关闭';
+    okBtn.onclick = closeQQWizard;
+  }
+}
+/* ============ 插件管理 ============ */
+async function renderPlugins() {
+  const el = document.getElementById('page-plugins');
+  if (!el) return;
+
+  if (!el.dataset.ready) {
+    el.innerHTML = `
+      <div class="card" style="margin-bottom:14px">
+        <h3>🔌 插件管理</h3>
+        <p class="hint">管理机器人用什么插件。带 <span style="color:var(--accent)">核心</span> 标记的是地基，禁用会导致功能失效。</p>
+        <div class="btn-row" style="margin-top:10px">
+          <button class="btn sm" id="pl-open-nonebot">📂 打开 NoneBot 插件目录</button>
+          <button class="btn sm" id="pl-open-napcat">📂 打开 NapCat 插件目录</button>
+          <button class="btn sm" id="pl-refresh">🔄 刷新</button>
+        </div>
+      </div>
+      <div class="tab-bar" id="pl-tabs" style="margin-bottom:12px">
+        <button class="tab-btn active" data-tab="nonebot">NoneBot 插件 <span id="pl-cnt-nonebot"></span></button>
+        <button class="tab-btn" data-tab="napcat">NapCat 插件 <span id="pl-cnt-napcat"></span></button>
+      </div>
+      <div id="pl-body"></div>`;
+    el.dataset.ready = '1';
+
+    el.querySelectorAll('#pl-tabs .tab-btn').forEach(btn => {
+      btn.onclick = () => {
+        el.querySelectorAll('#pl-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.pluginTab = btn.dataset.tab;
+        renderPluginList();
+      };
+    });
+    document.getElementById('pl-open-nonebot').onclick = () => bridge.pluginsOpenFolder('nonebot');
+    document.getElementById('pl-open-napcat').onclick = () => bridge.pluginsOpenFolder('napcat');
+    document.getElementById('pl-refresh').onclick = () => loadPlugins(true);
+  }
+
+  await loadPlugins();
+}
+
+async function loadPlugins(force) {
+  if (state.pluginsData && !force) { renderPluginList(); return; }
+  const body = document.getElementById('pl-body');
+  if (body) body.innerHTML = '<p class="hint">正在读取插件列表…</p>';
+
+  const r = await bridge.pluginsList();
+  if (!r || !r.ok) {
+    if (body) body.innerHTML = '<div class="card"><p style="color:var(--err)">读取失败：' + esc((r && r.error) || '未知错误') + '</p></div>';
+    return;
+  }
+  state.pluginsData = r.data;
+
+  const nb = r.data.nonebot.length;
+  const nc = r.data.napcat.length;
+  const c1 = document.getElementById('pl-cnt-nonebot');
+  const c2 = document.getElementById('pl-cnt-napcat');
+  if (c1) c1.textContent = '（' + nb + '）';
+  if (c2) c2.textContent = '（' + nc + '）';
+
+  renderPluginList();
+}
+
+function renderPluginList() {
+  const body = document.getElementById('pl-body');
+  if (!body || !state.pluginsData) return;
+  const tab = state.pluginTab || 'nonebot';
+  const list = tab === 'nonebot' ? state.pluginsData.nonebot : state.pluginsData.napcat;
+
+  if (!list.length) {
+    body.innerHTML = '<div class="card"><p class="hint">这个分类下还没有插件。</p></div>';
+    return;
+  }
+
+  const isNonebot = tab === 'nonebot';
+  const installBtn = isNonebot
+    ? '<button class="btn sm primary" id="pl-install" style="margin-bottom:12px">➕ 安装插件（选择 zip）</button>'
+    : '<p class="hint" style="margin-bottom:12px">NapCat 插件请手动放入插件目录后刷新。</p>';
+
+  body.innerHTML = installBtn + '<div class="plugin-grid">' + list.map(p => {
+    const badge = p.builtin ? '<span class="pl-badge">内置</span>' : '<span class="pl-badge ext">外部</span>';
+    const core = p.protected ? '<span class="pl-badge core">核心</span>' : '';
+    const missing = p.missing ? '<span class="pl-badge err">目录缺失</span>' : '';
+    const desc = p.description ? esc(p.description) : '<span style="opacity:.5">（无描述）</span>';
+    const ver = p.version ? 'v' + esc(p.version) : '';
+    const id = isNonebot ? p.name : (p.dirName || p.name);
+    return `
+      <div class="plugin-card" data-name="${esc(id)}">
+        <div class="plugin-head">
+          <div>
+            <strong>${esc(p.name)}</strong> ${badge}${core}${missing}
+            <span class="plugin-meta">${ver}${p.author ? ' · ' + esc(p.author) : ''}</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" data-toggle="${esc(id)}" ${p.enabled ? 'checked' : ''} ${p.protected ? 'disabled' : ''}>
+            <span class="slider"></span>
+          </label>
+        </div>
+        <p class="plugin-desc">${desc}</p>
+        ${p.removable ? `<button class="btn-link" data-remove="${esc(id)}" style="color:var(--err)">删除</button>` : ''}
+      </div>`;
+  }).join('') + '</div>';
+
+  // 安装
+  const inst = document.getElementById('pl-install');
+  if (inst) {
+    inst.onclick = async () => {
+      inst.disabled = true;
+      inst.textContent = '正在安装…';
+      const r = await bridge.pluginsInstall('nonebot');
+      inst.disabled = false;
+      inst.textContent = '➕ 安装插件（选择 zip）';
+      if (r && r.canceled) return;
+      if (r && r.ok) {
+        toast('插件「' + r.name + '」安装成功，重启机器人后生效', 'ok');
+        await loadPlugins(true);
+      } else {
+        toast('安装失败：' + ((r && r.error) || '未知错误'), 'err');
+      }
+    };
+  }
+
+  // 启停
+  body.querySelectorAll('[data-toggle]').forEach(cb => {
+    cb.onchange = async () => {
+      const name = cb.dataset.toggle;
+      const enabled = cb.checked;
+      const r = await bridge.pluginsSetEnabled(tab, name, enabled);
+      if (r && r.ok) {
+        toast((enabled ? '已启用 ' : '已禁用 ') + name + '，重启机器人后生效', 'ok');
+        await loadPlugins(true);
+      } else {
+        toast((r && r.error) || '操作失败', 'err');
+        cb.checked = !enabled;
+      }
+    };
+  });
+
+  // 删除
+  body.querySelectorAll('[data-remove]').forEach(btn => {
+    btn.onclick = async () => {
+      const name = btn.dataset.remove;
+      if (!confirm('确定删除插件「' + name + '」？此操作不可撤销。')) return;
+      const r = await bridge.pluginsRemove(tab, name);
+      if (r && r.ok) { toast('已删除 ' + name, 'ok'); await loadPlugins(true); }
+      else toast((r && r.error) || '删除失败', 'err');
+    };
+  });
+}
 
 /* ============ 人格 ============ */
 async function renderPersona() {
@@ -2303,6 +2948,14 @@ function bindEvents() {
     const wv = document.getElementById('webview');
     if (wv && s.napcat.running && !napcatWasRunning) {
       setTimeout(() => { try { wv.reload(); } catch (e) {} }, 1800);
+    }
+    // ★ NapCat 从「运行中」变成「已停止」→ 大概率打不开 QQ / 版本不匹配
+    if (napcatWasRunning && !s.napcat.running && !state.qqWizardShown) {
+      state.qqWizardShown = true;
+      setTimeout(() => {
+        toast('NapCat 已退出，可能是 QQ 无法启动或版本不匹配', 'err');
+        openQQWizard('napcat-exited');
+      }, 1200);
     }
     napcatWasRunning = s.napcat.running;
   });

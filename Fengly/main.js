@@ -60,6 +60,10 @@ const sysinfo = require('./modules/sysinfo');
 const updater = require('./modules/updater');
 const groupupdate = require('./modules/groupupdate');
 const envfile = require('./modules/envfile');
+const pluginsMod = require('./modules/plugins');
+const qqupdateMod = require('./modules/qqupdate');
+const qqWizard = require('./modules/qqupdatewizard');
+const commandsMod = require('./modules/commands');
 
 const BILIBILI = 'https://space.bilibili.com/3706994888280144?spm_id_from=333.1007.0.0';
 const APP_INFO = {
@@ -496,6 +500,104 @@ function bootstrap() {
       return rb;
     });
     ipcMain.handle('proc:stopBot', () => procman.stopBot());
+
+    // ---------- 插件管理 ----------
+    ipcMain.handle('plugins:list', () => {
+      try { return { ok: true, data: pluginsMod.listAll(runtimePath) }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    ipcMain.handle('plugins:setEnabled', (e, { type, name, enabled }) => {
+      try {
+        if (type === 'nonebot') return pluginsMod.setNonebotEnabled(runtimePath, name, enabled);
+        if (type === 'napcat') return pluginsMod.setNapcatEnabled(runtimePath, name, enabled);
+        return { ok: false, error: '未知插件类型: ' + type };
+      } catch (err) { return { ok: false, error: err.message }; }
+    });
+    ipcMain.handle('plugins:install', async (e, { type }) => {
+      try {
+        if (type !== 'nonebot') {
+          return { ok: false, error: 'NapCat 插件请手动放入 runtime/napcat/plugins/ 目录' };
+        }
+        const r = await dialog.showOpenDialog(mainWindow, {
+          title: '选择 NoneBot 插件压缩包',
+          filters: [{ name: '插件包', extensions: ['zip'] }],
+          properties: ['openFile']
+        });
+        if (r.canceled || !r.filePaths.length) return { ok: false, canceled: true };
+        const logs = [];
+        const res = pluginsMod.installNonebotPlugin(runtimePath, r.filePaths[0], (m) => logs.push(m));
+        return Object.assign(res, { logs });
+      } catch (err) { return { ok: false, error: err.message }; }
+    });
+    ipcMain.handle('plugins:remove', (e, { type, name }) => {
+      try {
+        if (type !== 'nonebot') return { ok: false, error: 'NapCat 插件请手动删除 runtime/napcat/plugins/ 下的目录' };
+        return pluginsMod.removeNonebotPlugin(runtimePath, name);
+      } catch (err) { return { ok: false, error: err.message }; }
+    });
+    ipcMain.handle('plugins:openFolder', (e, type) => {
+      try {
+        const base = type === 'napcat'
+          ? path.join(runtimePath, 'napcat', 'plugins')
+          : path.join(runtimePath, 'tianlu_bot', 'plugins');
+        if (!fs.existsSync(base)) fs.mkdirSync(base, { recursive: true });
+        shell.openPath(base);
+        return { ok: true, path: base };
+      } catch (err) { return { ok: false, error: err.message }; }
+    });
+
+    // ---------- QQ 版本检测与更新向导 ----------
+    // ---------- 命令速查 ----------
+    ipcMain.handle('commands:list', () => {
+      try { return { ok: true, list: commandsMod.collectCommands(runtimePath) }; }
+      catch (err) { return { ok: false, error: err.message }; }
+    });
+    ipcMain.handle('commands:text', () => {
+      try { return { ok: true, text: commandsMod.buildText(runtimePath) }; }
+      catch (err) { return { ok: false, error: err.message }; }
+    });
+    ipcMain.handle('qq:check', async (e, opts) => {
+      try {
+        const protocol = (opts && opts.protocol) || 'NapCat 4.18.41';
+        return await qqupdateMod.checkQQUpdate(runtimePath, { protocol });
+      } catch (err) { return { ok: false, error: err.message }; }
+    });
+    ipcMain.handle('qq:wizardSteps', () => {
+      try { return { ok: true, steps: qqWizard.WIZARD_STEPS }; }
+      catch (err) { return { ok: false, error: err.message }; }
+    });
+    ipcMain.handle('qq:downloadInstaller', async (e, args) => {
+      try {
+        const { url, destDir } = args || {};
+        const dir = destDir || path.join(app.getPath('userData'), 'downloads');
+        const r = await qqWizard.downloadQQInstaller({
+          url,
+          destDir: dir,
+          onProgress: (got, total) => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('qq:downloadProgress', { got, total });
+            }
+          }
+        });
+        return r;
+      } catch (err) { return { ok: false, error: err.message }; }
+    });
+    ipcMain.handle('qq:runInstaller', async (e, filePath) => {
+      try {
+        if (!filePath || !fs.existsSync(filePath)) return { ok: false, error: '安装包不存在' };
+        // 用 shell 打开，让 Windows 自己决定怎么跑（会弹 UAC）
+        const err2 = await shell.openPath(filePath);
+        if (err2) return { ok: false, error: err2 };
+        return { ok: true };
+      } catch (err) { return { ok: false, error: err.message }; }
+    });
+    ipcMain.handle('qq:openDownloadPage', () => {
+      try {
+        shell.openExternal('https://im.qq.com/pcqq/index.shtml');
+        return { ok: true };
+      } catch (err) { return { ok: false, error: err.message }; }
+    });
+
 
     ipcMain.handle('python:detect', () => python.detectPython());
     ipcMain.handle('python:setup', async () => {
@@ -1419,16 +1521,29 @@ JSON 必须包含以下字段：
         setTimeout(() => ensureDesktopShortcut(), 20000);
       }
     } catch (e) {}
-    // 更新检查：启动 15 秒后首查，之后每 30 分钟；窗口聚焦时补查（10 分钟节流）
-    setTimeout(() => runUpdateCheck(false), 15000);
-    setInterval(() => runUpdateCheck(false), 30 * 60 * 1000);
-    let lastFocusCheck = 0;
-    app.on('browser-window-focus', () => {
-      if (Date.now() - lastFocusCheck > 10 * 60 * 1000) {
-        lastFocusCheck = Date.now();
-        runUpdateCheck(false);
-      }
-    });
+    // =====================================================================
+    // 自动更新：默认【关闭】
+    // 原因：NapCat 已于 2026-11-14 删库停更，SnowLuma 仓库也已删除，
+    //       协议端处于不稳定期，自动拉取新版本风险大于收益。
+    // 用户如需检查更新，可在设置页手动点「检查更新」。
+    // 需要恢复自动检查时，在 settings.json 里设置 "autoUpdate": true。
+    // =====================================================================
+    let _autoUpdate = false;
+    try { _autoUpdate = store.get('autoUpdate') === true; } catch (e) {}
+    if (_autoUpdate) {
+      setTimeout(() => runUpdateCheck(false), 15000);
+      setInterval(() => runUpdateCheck(false), 30 * 60 * 1000);
+      let lastFocusCheck = 0;
+      app.on('browser-window-focus', () => {
+        if (Date.now() - lastFocusCheck > 10 * 60 * 1000) {
+          lastFocusCheck = Date.now();
+          runUpdateCheck(false);
+        }
+      });
+      console.log('[main] 自动更新检查已启用');
+    } else {
+      console.log('[main] 自动更新检查已关闭（NapCat 已停更，避免拉取到不可用版本）');
+    }
 
     // 首次运行：自动配置网络 + 自动配置 Python（后台，不阻塞）
     if (firstRun) {

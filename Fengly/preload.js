@@ -83,12 +83,31 @@ contextBridge.exposeInMainWorld('api', {
   listMusicAudio: () => invoke('media:listMusic'),
   msgList: () => invoke('msg:list'),
   msgRead: (name) => invoke('msg:read', name),
+
+  // 插件管理
+  pluginsList: () => invoke('plugins:list'),
+  pluginsSetEnabled: (type, name, enabled) => invoke('plugins:setEnabled', { type, name, enabled }),
+  pluginsInstall: (type) => invoke('plugins:install', { type }),
+  pluginsRemove: (type, name) => invoke('plugins:remove', { type, name }),
+  pluginsOpenFolder: (type) => invoke('plugins:openFolder', type),
+
+  // 命令速查
+  commandsList: () => invoke('commands:list'),
+  commandsText: () => invoke('commands:text'),
+
+  // QQ 版本检测与更新向导
+  qqCheck: (opts) => invoke('qq:check', opts),
+  qqWizardSteps: () => invoke('qq:wizardSteps'),
+  qqDownloadInstaller: (url, destDir) => invoke('qq:downloadInstaller', { url, destDir }),
+  qqRunInstaller: (filePath) => invoke('qq:runInstaller', filePath),
+  qqOpenDownloadPage: () => invoke('qq:openDownloadPage'),
+  onQQDownloadProgress: (cb) => on('qq:downloadProgress', cb),
   onUpdateStatus: (cb) => on('update:status', cb),
   onUpdateProgress: (cb) => on('update:progress', cb),
 
   // 事件订阅
   on: (channel, cb) => {
-    const valid = ['proc:log', 'proc:status', 'python:log', 'sys:info', 'term:data', 'crash', 'progress', 'update:progress', 'update:status'];
+    const valid = ['proc:log', 'proc:status', 'python:log', 'sys:info', 'term:data', 'crash', 'progress', 'update:progress', 'update:status', 'qq:downloadProgress'];
     if (valid.includes(channel)) {
       const listener = (e, payload) => cb(payload);
       ipcRenderer.on(channel, listener);
