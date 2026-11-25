@@ -100,17 +100,26 @@ class ProcessManager {
     } catch (e) { console.error('[procman] WebUI 端口同步失败:', e.message); }
 
     // NapCat 需要的环境变量
+    // ★ 关键：给 runtime QQ 分配独立的数据目录，避免和官方 QQ 冲突
+    //   官方 QQ 和 NapCat 用的 QQ 是同一个客户端，默认都会读写 %APPDATA%\QQ。
+    //   两者版本不同（官方 9.9.36 / NapCat 需要 9.9.33），数据格式不兼容，
+    //   同时运行会导致「文件访问异常」「登录失败」。这里把 runtime QQ 的
+    //   APPDATA 指向 runtime\qq\data，彻底隔离。
+    const qqDataDir = path.join(runtimePath, "qq-data");
+    try { if (!fs.existsSync(qqDataDir)) fs.mkdirSync(qqDataDir, { recursive: true }); } catch (e) {}
+
     const env = {
       ...process.env,
-      NAPCAT_PATCH_PACKAGE: path.join(napcatDir, 'qqnt.json'),
-      NAPCAT_LOAD_PATH: path.join(napcatDir, 'loadNapCat.js'),
+      APPDATA: qqDataDir,
+      NAPCAT_PATCH_PACKAGE: path.join(napcatDir, "qqnt.json"),
+      NAPCAT_LOAD_PATH: path.join(napcatDir, "loadNapCat.js"),
       NAPCAT_INJECT_PATH: hookDll,
-      NAPCAT_MAIN_PATH: path.join(napcatDir, 'napcat.mjs'),
+      NAPCAT_MAIN_PATH: path.join(napcatDir, "napcat.mjs"),
       NAPCAT_WORKDIR: napcatDir,
-      NAPCAT_WEBUI_SECRET_KEY: 'tianlu', // 固定 token
-      // 账密自动登录：账号 + 密码 MD5（免扫码，登录态失效时自动用密码回退登录）
-      NAPCAT_QUICK_ACCOUNT: 'REDACTED_QQ',
-      NAPCAT_QUICK_PASSWORD_MD5: 'REDACTED_MD5'
+      NAPCAT_WEBUI_SECRET_KEY: "tianlu",
+      // 账密自动登录：凭证来自 settings（不写死在代码里）
+      NAPCAT_QUICK_ACCOUNT: String(opts.account || ""),
+      NAPCAT_QUICK_PASSWORD_MD5: String(opts.passwordMd5 || "")
     };
 
     // 自动快速登录：扫描 config 里带 QQ 账号后缀的配置（onebot11_<uin>.json），
