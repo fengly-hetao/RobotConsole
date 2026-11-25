@@ -91,6 +91,17 @@ contextBridge.exposeInMainWorld('api', {
   pluginsRemove: (type, name) => invoke('plugins:remove', { type, name }),
   pluginsOpenFolder: (type) => invoke('plugins:openFolder', type),
 
+  // 主页 AI 发送
+  sendStatus: () => invoke('send:status'),
+  sendMessage: (args) => invoke('send:message', args),
+
+  // 工具：MD5
+  md5: (text) => invoke('util:md5', text),
+
+  // 账号登录管理
+  accountState: () => invoke('account:state'),
+  accountLogout: (account) => invoke('account:logout', { account }),
+
   // 命令速查
   commandsList: () => invoke('commands:list'),
   commandsText: () => invoke('commands:text'),

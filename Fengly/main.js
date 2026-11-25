@@ -64,6 +64,8 @@ const pluginsMod = require('./modules/plugins');
 const qqupdateMod = require('./modules/qqupdate');
 const qqWizard = require('./modules/qqupdatewizard');
 const commandsMod = require('./modules/commands');
+const accountMod = require('./modules/account');
+const senderMod = require('./modules/sender');
 
 const BILIBILI = 'https://space.bilibili.com/3706994888280144?spm_id_from=333.1007.0.0';
 const APP_INFO = {
@@ -547,6 +549,52 @@ function bootstrap() {
     });
 
     // ---------- QQ 版本检测与更新向导 ----------
+    // ---------- 主页 AI 发送 ----------
+    ipcMain.handle('send:status', async () => {
+      try {
+        const bport = (store.get('bot') || {}).port || 18080;
+        const st = await senderMod.getStatus(bport);
+        return { ok: true, data: st };
+      } catch (err) { return { ok: false, error: err.message }; }
+    });
+    ipcMain.handle('send:message', async (e, args) => {
+      try {
+        const bport = (store.get('bot') || {}).port || 18080;
+        const r = await senderMod.send({
+          runtimePath,
+          botPort: bport,
+          text: args && args.text,
+          groups: (args && args.groups) || [],
+          ai: !!(args && args.ai),
+          instruction: (args && args.instruction) || ''
+        });
+        return r;
+      } catch (err) { return { ok: false, error: err.message }; }
+    });
+    // ---------- MD5（算 QQ 密码 MD5，用于 NapCat 自动登录） ----------
+    ipcMain.handle('util:md5', (e, text) => {
+      try {
+        const crypto = require('crypto');
+        return crypto.createHash('md5').update(String(text || ''), 'utf8').digest('hex');
+      } catch (err) { return ''; }
+    });
+    // ---------- 账号登录管理 ----------
+    ipcMain.handle('account:state', () => {
+      try { return { ok: true, data: accountMod.getLoginState({ runtimePath, store }) }; }
+      catch (err) { return { ok: false, error: err.message }; }
+    });
+    ipcMain.handle('account:logout', async (e, args) => {
+      try {
+        // 先停掉 NapCat，否则文件被占用删不掉
+        try { await procman.stopNapcat(); } catch (err) {}
+        try { await procman.stopBot(); } catch (err) {}
+        // 等进程真正退出
+        await new Promise((r) => setTimeout(r, 2500));
+        const account = (args && args.account) || '';
+        const r = accountMod.logout({ runtimePath, store, account });
+        return r;
+      } catch (err) { return { ok: false, error: err.message }; }
+    });
     // ---------- 命令速查 ----------
     ipcMain.handle('commands:list', () => {
       try { return { ok: true, list: commandsMod.collectCommands(runtimePath) }; }

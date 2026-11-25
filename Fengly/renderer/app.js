@@ -263,7 +263,7 @@ const PAGE_RENDERERS = {
 /* ============ 首页 ============ */
 async function renderHome() {
   const el = document.getElementById('page-home');
-  if (el.dataset.ready) { refreshProc(); return; }
+    if (el.dataset.ready) { refreshProc(); loadSendGroups(); return; }
   if (!state.sysinfo) { try { state.sysinfo = await bridge.sysInfo(); } catch (e) {} }
   el.innerHTML = `    <div class="home-top-row">
       <div class="card home-mini-card" style="flex:1;min-width:260px">
@@ -287,6 +287,32 @@ async function renderHome() {
         <span class="badge stopped" id="badge-bot" data-i18n="home.stopped"></span>
       </div>
     </div>
+      <div class="card" id="home-send-card" style="margin-top:16px">
+        <h3>💬 AI 发送 <span class="hint" id="send-bot-info" style="font-weight:400;font-size:12px"></span></h3>
+        <p class="hint">输入一句话，让机器人以它的人格语气发到群里。可以选单个群，也可以群发。</p>
+
+        <div class="send-row" style="margin-top:12px">
+          <div class="send-groups" id="send-groups">
+            <span class="hint">正在读取群列表…</span>
+          </div>
+        </div>
+
+        <div class="send-input-row" style="margin-top:12px">
+          <textarea id="send-text" rows="3" placeholder="要发什么？例如：今晚八点开黑，来的扣 1"
+            style="width:100%;resize:vertical;font-family:inherit;font-size:13.5px;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg-2);color:var(--text)"></textarea>
+        </div>
+
+        <div class="btn-row" style="margin-top:10px;align-items:center;gap:10px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="send-ai" checked> AI 改写成人格语气
+          </label>
+          <span style="flex:1"></span>
+          <button class="btn sm" id="send-preview">👁 预览</button>
+          <button class="btn sm primary" id="send-go">📤 发送</button>
+        </div>
+
+        <div id="send-result" style="margin-top:10px"></div>
+      </div>
     <div class="update-banner hidden" id="update-banner">
       <div style="flex:1;min-width:0">
         <div>🎉 <span data-i18n="update.found"></span> <b id="update-version"></b></div>
@@ -326,6 +352,7 @@ async function renderHome() {
   initHomeUsage();
 
   await Promise.all([refreshProc()]);
+    loadSendGroups();
 }
 
 function renderHomeResources() {
@@ -962,6 +989,28 @@ async function renderSettings() {
   try { const lines = await bridge.readEnv('tianlu_bot/.env'); lines.forEach(l => { if (l.type === 'key') envVals[l.key] = l.value; }); } catch (e) {}
   const py = await bridge.detectPython();
   el.innerHTML = `    <div class="card usage-panel" style="margin-bottom:16px">
+      <div class="card" style="margin-bottom:16px">
+        <h3>🔑 账号与登录</h3>
+        <p class="hint">程序会自动用下面的账号密码登录机器人 QQ。换个号测试时，先点「退出登录」清掉旧的自动登录。</p>
+        <div id="account-status" style="margin-top:12px;padding:10px 12px;border-radius:10px;background:var(--bg-2);font-size:13px">
+          <span style="opacity:.7">正在读取登录状态…</span>
+        </div>
+        <div class="grid" style="grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
+          <div class="field">
+            <label>机器人 QQ 号</label>
+            <input type="text" id="set-napcat-account" placeholder="填写机器人 QQ 号" value="">
+          </div>
+          <div class="field">
+            <label>密码（留空则保持现有）</label>
+            <input type="password" id="set-napcat-password" placeholder="留空 = 不修改">
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:10px">
+          <button class="btn sm primary" id="btn-account-save">💾 保存账号</button>
+          <button class="btn sm danger" id="btn-account-logout">🚪 退出登录</button>
+        </div>
+        <p class="hint" style="margin-top:8px;opacity:.7">退出登录会清掉：账号、密码 MD5、NapCat 配置、passkey，下次启动需要重新扫码或输密码。</p>
+      </div>
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
         <h3 style="margin:0">📊 <span data-i18n="settings.usage.title"></span></h3>
         <button class="btn sm ghost" id="btn-usage-refresh" data-i18n="settings.usage.refresh"></button>
@@ -1263,6 +1312,82 @@ async function renderSettings() {
   document.getElementById('btn-py-detect').onclick = async () => { const p = await bridge.detectPython(); document.getElementById('set-py').value = p ? p.path : ''; document.getElementById('py-status').textContent = p ? '✅ ' + p.path : '⚠️ 未检测到'; };
   document.querySelectorAll('button[data-url]').forEach(b => { b.onclick = () => openLinkSafe(b.dataset.url); });
   document.getElementById('btn-py-setup').onclick = () => { toast(t('home.setup.python') + '…'); bridge.setupPython().then(r => { toast(r.ok ? 'Python OK' : 'Python 配置完成（有警告）', r.ok ? 'ok' : 'err'); renderSettings(); }); };
+  // ---------- 账号与登录 ----------
+  const accStatus = document.getElementById('account-status');
+  const accInput = document.getElementById('set-napcat-account');
+  const pwdInput = document.getElementById('set-napcat-password');
+
+  async function refreshAccountUi() {
+    const r = await bridge.accountState();
+    if (!accStatus) return;
+    if (!r || !r.ok) {
+      accStatus.innerHTML = '<span style="color:var(--err)">读取失败：' + esc((r && r.error) || '未知错误') + '</span>';
+      return;
+    }
+    const d = r.data;
+    if (accInput && !accInput.value) accInput.value = d.account || '';
+    const readyColor = d.autoLoginReady ? 'var(--ok, #6fdd8f)' : 'var(--warn, #f5b942)';
+    const readyText = d.autoLoginReady ? '已配置自动登录' : '未配置自动登录（需扫码）';
+    accStatus.innerHTML =
+      '<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>当前账号</span><b>' + esc(d.account || '（未设置）') + '</b></div>' +
+      '<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>密码</span><b>' + (d.hasPassword ? '已保存' : '未设置') + '</b></div>' +
+      '<div style="display:flex;justify-content:space-between"><span>自动登录</span><b style="color:' + readyColor + '">' + readyText + '</b></div>' +
+      (d.configFiles && d.configFiles.length
+        ? '<div style="opacity:.6;font-size:11.5px;margin-top:6px">NapCat 配置：' + d.configFiles.map(esc).join('、') + '</div>'
+        : '');
+  }
+
+  if (accStatus) refreshAccountUi();
+
+  const accSaveBtn = document.getElementById('btn-account-save');
+  if (accSaveBtn) {
+    accSaveBtn.onclick = async () => {
+      const account = (accInput ? accInput.value : '').trim();
+      const pwd = (pwdInput ? pwdInput.value : '').trim();
+      if (!account) { toast('请填写机器人 QQ 号', 'err'); return; }
+      if (!/^\d{5,12}$/.test(account)) { toast('QQ 号格式不对', 'err'); return; }
+      accSaveBtn.disabled = true;
+      accSaveBtn.textContent = '保存中…';
+      try {
+        // 账号字段
+        await bridge.setSettings({ napcatAccount: account });
+        // 密码：留空则不动
+        if (pwd) {
+          const md5 = await bridge.md5(pwd);
+          if (md5) await bridge.setSettings({ napcatPasswordMd5: md5 });
+        }
+        toast('账号已保存，重启机器人生效', 'ok');
+        if (pwdInput) pwdInput.value = '';
+        state.settings = await bridge.getSettings();
+        await refreshAccountUi();
+      } catch (e) {
+        toast('保存失败：' + e.message, 'err');
+      }
+      accSaveBtn.disabled = false;
+      accSaveBtn.textContent = '💾 保存账号';
+    };
+  }
+
+  const logoutBtn = document.getElementById('btn-account-logout');
+  if (logoutBtn) {
+    logoutBtn.onclick = async () => {
+      if (!confirm('确定退出登录？\n\n将清除：账号、密码、NapCat 配置、passkey\n清除后下次启动需要重新扫码或输入密码登录。')) return;
+      logoutBtn.disabled = true;
+      logoutBtn.textContent = '正在清理…';
+      const r = await bridge.accountLogout('');
+      logoutBtn.disabled = false;
+      logoutBtn.textContent = '🚪 退出登录';
+      if (r && r.ok) {
+        const n = (r.removed || []).length;
+        toast('已清除自动登录（' + n + ' 项），NapCat 已停止', 'ok');
+        if (accInput) accInput.value = '';
+        if (pwdInput) pwdInput.value = '';
+        await refreshAccountUi();
+      } else {
+        toast('退出失败：' + ((r && r.error) || '未知错误'), 'err');
+      }
+    };
+  }
   // QQ 版本检查按钮
   const qqCheckBtn = document.getElementById('btn-qq-check');
   if (qqCheckBtn) {
@@ -3024,3 +3149,201 @@ async function boot() {
 
 window.__onLangChange = () => {};
 document.addEventListener('DOMContentLoaded', boot);
+
+/* ============ 主页 AI 发送（顶层函数，不依赖 boot/renderSettings 作用域） ============ */
+const SEND_UI = {
+  groupsData: [],
+  allSelected: false,
+  bound: false
+};
+
+// 取 DOM 引用（每次现取，避免缓存过期的 null）
+function sendEls() {
+  return {
+    groupsBox: document.getElementById('send-groups'),
+    text: document.getElementById('send-text'),
+    ai: document.getElementById('send-ai'),
+    result: document.getElementById('send-result'),
+    botInfo: document.getElementById('send-bot-info'),
+    goBtn: document.getElementById('send-go'),
+    pvBtn: document.getElementById('send-preview')
+  };
+}
+
+// 重新绑定按钮（只绑一次）
+function bindSendButtons() {
+  const e = sendEls();
+  if (e.goBtn && !e.goBtn._bound) {
+    e.goBtn._bound = true;
+    e.goBtn.onclick = () => doSendMessage();
+  }
+  if (e.pvBtn && !e.pvBtn._bound) {
+    e.pvBtn._bound = true;
+    e.pvBtn.onclick = () => doPreviewMessage();
+  }
+}
+
+// 拉群列表并渲染
+async function loadSendGroups() {
+  const e = sendEls();
+  if (!e.groupsBox) return;
+
+  bindSendButtons();
+
+  const r = await bridge.sendStatus();
+  if (!r || !r.ok) {
+    e.groupsBox.innerHTML = '<span style="color:var(--err)">读取失败：' + esc((r && r.error) || '未知错误') + '</span>';
+    return;
+  }
+  const st = r.data || {};
+  SEND_UI.groupsData = st.groups || [];
+
+  if (e.botInfo) {
+    e.botInfo.textContent = st.botQq
+      ? ('机器人：' + (st.botNick || '') + '（' + st.botQq + '）')
+      : '⚠️ 机器人未连接';
+  }
+
+  if (!SEND_UI.groupsData.length) {
+    e.groupsBox.innerHTML =
+      '<span style="color:var(--warn, #f5b942)">' +
+      (st.error ? esc(st.error) : '机器人当前不在任何群，先用它的 QQ 加群后再试') +
+      '</span>';
+    return;
+  }
+  renderSendGroups();
+}
+
+function renderSendGroups() {
+  const e = sendEls();
+  if (!e.groupsBox) return;
+
+  const items = SEND_UI.groupsData.map((g) =>
+    '<label class="send-group-item">' +
+      '<input type="checkbox" class="send-grp" value="' + esc(g.id) + '"' + (SEND_UI.allSelected ? ' checked' : '') + '>' +
+      '<span>' + esc(g.name || g.id) + '</span>' +
+      '<small>' + (g.memberCount || 0) + '人</small>' +
+    '</label>'
+  ).join('');
+
+  e.groupsBox.innerHTML =
+    '<div class="send-group-head">' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">' +
+        '<input type="checkbox" id="send-grp-all"><b>全部群</b>' +
+      '</label>' +
+      '<span class="hint" style="margin-left:8px">共 ' + SEND_UI.groupsData.length + ' 个群</span>' +
+    '</div>' +
+    '<div class="send-group-list">' + items + '</div>';
+
+  const allCb = document.getElementById('send-grp-all');
+  if (allCb) {
+    allCb.onchange = () => {
+      SEND_UI.allSelected = allCb.checked;
+      e.groupsBox.querySelectorAll('.send-grp').forEach((cb) => { cb.checked = SEND_UI.allSelected; });
+    };
+  }
+  e.groupsBox.querySelectorAll('.send-grp').forEach((cb) => {
+    cb.onchange = () => {
+      const list = Array.from(e.groupsBox.querySelectorAll('.send-grp'));
+      const all = list.every((x) => x.checked);
+      SEND_UI.allSelected = all;
+      if (allCb) allCb.checked = all;
+    };
+  });
+}
+
+function getSelectedGroups() {
+  const e = sendEls();
+  if (!e.groupsBox) return [];
+  return Array.from(e.groupsBox.querySelectorAll('.send-grp'))
+    .filter((cb) => cb.checked)
+    .map((cb) => cb.value);
+}
+
+async function doSendMessage() {
+  const e = sendEls();
+  const text = (e.text ? e.text.value : '').trim();
+  if (!text) { toast('请先输入要发的内容', 'err'); return; }
+
+  const groups = getSelectedGroups();
+  const useAi = !!(e.ai && e.ai.checked);
+  const targetCount = groups.length || SEND_UI.groupsData.length;
+  if (!targetCount) { toast('没有可发送的群', 'err'); return; }
+
+  const modeText = useAi ? '（先用 AI 改写成人格语气）' : '（原文发送）';
+  if (!confirm('确定发送到 ' + targetCount + ' 个群？\n' + modeText)) return;
+
+  if (e.goBtn) { e.goBtn.disabled = true; e.goBtn.textContent = useAi ? 'AI 改写中…' : '发送中…'; }
+  if (e.result) e.result.innerHTML = '';
+
+  let r;
+  try {
+    r = await bridge.sendMessage({ text, groups, ai: useAi });
+  } catch (err) {
+    r = { ok: false, error: err.message };
+  }
+
+  if (e.goBtn) { e.goBtn.disabled = false; e.goBtn.textContent = '📤 发送'; }
+
+  if (!e.result) return;
+  if (r && r.ok) {
+    const n = (r.sent || []).length;
+    const bad = (r.failed || []).length;
+    e.result.innerHTML =
+      '<div style="padding:10px 12px;border-radius:10px;background:var(--bg-2);font-size:13px">' +
+        '<div style="color:var(--ok, #6fdd8f);margin-bottom:6px">✅ 已发送到 ' + n + ' 个群' +
+          (bad ? '，失败 ' + bad + ' 个' : '') + '</div>' +
+        (r.finalText
+          ? '<div style="opacity:.7;font-size:12px;margin-bottom:4px">实际发送内容：</div>' +
+            '<div style="white-space:pre-wrap;opacity:.92">' + esc(r.finalText) + '</div>'
+          : '') +
+        (bad
+          ? '<div style="color:var(--err);font-size:12px;margin-top:6px">失败：' +
+            (r.failed || []).map((f) => esc(f.groupId || '') + ' ' + esc(f.error || '')).join('；') + '</div>'
+          : '') +
+      '</div>';
+    if (e.text) e.text.value = '';
+    toast('发送完成', 'ok');
+  } else {
+    e.result.innerHTML =
+      '<div style="padding:10px 12px;border-radius:10px;background:var(--bg-2);color:var(--err);font-size:13px">' +
+        '❌ ' + esc((r && r.error) || '发送失败') + '</div>';
+  }
+}
+
+async function doPreviewMessage() {
+  const e = sendEls();
+  const text = (e.text ? e.text.value : '').trim();
+  if (!text) { toast('请先输入内容', 'err'); return; }
+  const useAi = !!(e.ai && e.ai.checked);
+
+  if (e.pvBtn) { e.pvBtn.disabled = true; e.pvBtn.textContent = '改写中…'; }
+
+  let r;
+  try {
+    // groups 传一个不存在的群号：只做改写，不会真发出去
+    r = await bridge.sendMessage({ text, groups: ['__preview_only__'], ai: useAi });
+  } catch (err) {
+    r = { ok: false, error: err.message };
+  }
+
+  if (e.pvBtn) { e.pvBtn.disabled = false; e.pvBtn.textContent = '👁 预览'; }
+  if (!e.result) return;
+
+  if (r && r.finalText) {
+    const sendInfo = r.ok
+      ? '<div style="color:var(--warn, #f5b942);font-size:12px;margin-top:6px">⚠️ 上面的内容已经发出去了（预览模式下群号无效时不会发）</div>'
+      : '<div style="opacity:.6;font-size:12px;margin-top:6px">（未发送）</div>';
+    e.result.innerHTML =
+      '<div style="padding:10px 12px;border-radius:10px;background:var(--bg-2);font-size:13px">' +
+        '<div style="opacity:.7;font-size:12px;margin-bottom:6px">预览：</div>' +
+        '<div style="white-space:pre-wrap">' + esc(r.finalText) + '</div>' +
+        sendInfo +
+      '</div>';
+  } else {
+    e.result.innerHTML =
+      '<div style="padding:10px 12px;border-radius:10px;background:var(--bg-2);color:var(--err);font-size:13px">' +
+        '预览失败：' + esc((r && r.error) || '未知错误') + '</div>';
+  }
+}
+
