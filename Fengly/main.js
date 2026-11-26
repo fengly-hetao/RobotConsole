@@ -69,6 +69,7 @@ const senderMod = require('./modules/sender');
 const msgmigrate = require('./modules/msgmigrate');
 const cleanupMod = require('./modules/cleanup');
 const sysrepairMod = require('./modules/sysrepair');
+const qqguardMod = require('./modules/qqguard');
 
 const BILIBILI = 'https://space.bilibili.com/3706994888280144?spm_id_from=333.1007.0.0';
 const APP_INFO = {
@@ -552,6 +553,34 @@ function bootstrap() {
     });
 
     // ---------- QQ 版本检测与更新向导 ----------
+    // ---------- QQ 自动更新防护（启动时自动执行） ----------
+    // 目的：NapCat 依赖固定版本的 QQ（9.9.33），QQ 一更新机器人就废。
+    // 做法：锁定 runtime\qq 的核心文件 + versions 目录拒绝写入，
+    //       已锁定则跳过，不会反复动磁盘。
+    async function ensureQQLocked() {
+      try {
+        const rt = require('./modules/runtime').getRuntimePath();
+        if (!rt || !fs.existsSync(path.join(rt, 'qq'))) return;
+
+        const st = await qqguardMod.getLockState(rt);
+        if (st.ok && st.writable === 0) {
+          console.log('[qqguard] QQ 已处于锁定状态（' + st.locked + ' 个文件）');
+          return;
+        }
+
+        console.log('[qqguard] 检测到 QQ 未锁定，开始锁定…');
+        const r = await qqguardMod.lockRuntimeQQ(rt, (m) => console.log('[qqguard] ' + m));
+        if (r.ok) {
+          console.log('[qqguard] 锁定完成：' + r.locked + ' 个文件');
+          // 记录版本基线
+          try { qqguardMod.saveVersionBaseline(rt); } catch (e) {}
+        } else {
+          console.warn('[qqguard] 锁定失败: ' + r.error);
+        }
+      } catch (e) {
+        console.warn('[qqguard] 防护初始化异常: ' + e.message);
+      }
+    }
     // ---------- 系统清理助手 ----------
     ipcMain.handle('cleanup:scan', async () => {
       try { return await cleanupMod.scan(); }
@@ -1766,16 +1795,29 @@ JSON 必须包含以下字段：
       }
     } catch (e) {}
     // =====================================================================
-    // 自动更新：默认【关闭】
-    // 原因：NapCat 已于 2026-11-14 删库停更，SnowLuma 仓库也已删除，
-    //       协议端处于不稳定期，自动拉取新版本风险大于收益。
-    // 用户如需检查更新，可在设置页手动点「检查更新」。
-    // 需要恢复自动检查时，在 settings.json 里设置 "autoUpdate": true。
+    // 自动更新策略
+    // ---------------------------------------------------------------------
+    // 1.9.5 及以下：启动后 8 秒自动检查一次，发现新版就弹横幅提示下载 .exe
+    //              （老版本在游戏/菜单上有已知 bug，需要引导升级）
+    // 1.9.6 及以上：默认不自动检查，避免频繁打扰；用户可在设置里手动检查
+    // settings.json 里写 "autoUpdate": true 可强制开启 / false 强制关闭
     // =====================================================================
-    let _autoUpdate = false;
-    try { _autoUpdate = store.get('autoUpdate') === true; } catch (e) {}
+    const _curVer = currentAppVersion();
+    const _vParts = String(_curVer || '0.0.0').replace(/^v/i, '').split('.').map((x) => parseInt(x, 10) || 0);
+    const _needAutoPrompt = (_vParts[0] < 1) ||
+      (_vParts[0] === 1 && _vParts[1] < 9) ||
+      (_vParts[0] === 1 && _vParts[1] === 9 && _vParts[2] <= 5);   // <= 1.9.5
+
+    let _autoUpdate = _needAutoPrompt;
+    try {
+      const forced = store.get('autoUpdate');
+      if (forced === true) _autoUpdate = true;
+      else if (forced === false) _autoUpdate = false;
+    } catch (e) {}
+
     if (_autoUpdate) {
-      setTimeout(() => runUpdateCheck(false), 15000);
+      const delay = _needAutoPrompt ? 8000 : 15000;
+      setTimeout(() => runUpdateCheck(false), delay);
       setInterval(() => runUpdateCheck(false), 30 * 60 * 1000);
       let lastFocusCheck = 0;
       app.on('browser-window-focus', () => {
@@ -1784,9 +1826,12 @@ JSON 必须包含以下字段：
           runUpdateCheck(false);
         }
       });
-      console.log('[main] 自动更新检查已启用');
+      console.log('[main] 自动更新检查已启用（当前 ' + _curVer + (_needAutoPrompt ? '，老版本需要引导升级' : '') + '）');
     } else {
-      console.log('[main] 自动更新检查已关闭（NapCat 已停更，避免拉取到不可用版本）');
+      console.log('[main] 自动更新检查已关闭（当前 ' + _curVer + '，可在设置里手动检查）');
+
+    // QQ 自动更新防护：锁定 runtime QQ，防止 QQ 升级导致 NapCat 失效
+    ensureQQLocked();
     }
 
     // 首次运行：自动配置网络 + 自动配置 Python（后台，不阻塞）
