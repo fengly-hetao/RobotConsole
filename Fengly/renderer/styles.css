@@ -625,3 +625,9 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
 .send-group-item:hover { border-color: var(--accent); }
 .send-group-item input { cursor: pointer; }
 .send-group-item small { opacity: .55; font-size: 11px; }
+/* ===== 系统清理项 ===== */
+.cleanup-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: 10px; background: var(--bg-2);
+  margin-bottom: 8px;
+}

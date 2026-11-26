@@ -33,6 +33,8 @@ PLUGINS = [
     "monitor",
     "poke",
     "feedback",
+    "consoleapi",
+    "welcome",
 ]
 
 # ── 插件启用配置 ──────────────────────────────────────────────

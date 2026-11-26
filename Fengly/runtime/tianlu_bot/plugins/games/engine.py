@@ -146,29 +146,50 @@ def play(user_id: str, cmd: str, args: str = "") -> str | None:
         extra = {"a": d[0], "b": d[1], "c": d[2], "result": result}
 
     elif kind == "coin":
+        # 支持两套术语：正/反、左/右（同一游戏可配不同描述）
         guess = args.strip()
         face = random.choice(["正", "反"])
-        if guess and guess[0] in ("正", "反") and guess[0] == face[0]:
-            result = "猜中啦！"
-            gain = int(g.get("win", cost * 2))
-        elif guess and guess[0] in ("正", "反"):
-            result = "猜错了～"
+        # 归一化：左/右 映射到 正/反
+        alias = {"左": "正", "右": "反", "正面": "正", "反面": "反", "正面朝上": "正", "反面朝上": "反"}
+        g0 = guess[0] if guess else ""
+        norm = alias.get(guess, g0) or g0
+        if norm in ("正", "反"):
+            if norm == face:
+                result = "猜中啦！"
+                gain = int(g.get("win", cost * 2))
+            else:
+                result = "猜错了～"
         else:
             result = f"硬币落下：{face}面"
             gain = 0
         extra = {"a": face, "result": result}
 
     elif kind == "oddeven":
+        # 支持两套术语：单/双、大/小（1-3 为小，4-6 为大；同时奇数=单）
         guess = args.strip()
         n = random.randint(1, 6)
         actual = "单" if n % 2 else "双"
-        if guess and guess[0] in "单双" and guess[0] == actual[0]:
-            result = f"骰子 {n} 点（{actual}），猜中啦！"
-            gain = int(g.get("win", cost * 2))
-        elif guess and guess[0] in "单双":
-            result = f"骰子 {n} 点（{actual}），猜错了～"
+        actual_big = "大" if n >= 4 else "小"
+        alias = {"大": "大", "小": "小", "单": "单", "双": "双",
+                 "大数": "大", "小数": "小", "奇数": "单", "偶数": "双"}
+        g0 = guess[0] if guess else ""
+        norm = alias.get(guess, g0) or g0
+        if norm in ("单", "双"):
+            # 按单双判
+            if norm == actual:
+                result = f"骰子 {n} 点（{actual}），猜中啦！"
+                gain = int(g.get("win", cost * 2))
+            else:
+                result = f"骰子 {n} 点（{actual}），猜错了～"
+        elif norm in ("大", "小"):
+            # 按大小判
+            if norm == actual_big:
+                result = f"骰子 {n} 点（{actual_big}），猜中啦！"
+                gain = int(g.get("win", cost * 2))
+            else:
+                result = f"骰子 {n} 点（{actual_big}），猜错了～"
         else:
-            result = f"骰子 {n} 点（{actual}）"
+            result = f"骰子 {n} 点（{actual}，{actual_big}）"
         extra = {"a": n, "b": actual, "result": result}
 
     elif kind == "slot":

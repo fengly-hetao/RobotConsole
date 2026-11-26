@@ -66,6 +66,9 @@ const qqWizard = require('./modules/qqupdatewizard');
 const commandsMod = require('./modules/commands');
 const accountMod = require('./modules/account');
 const senderMod = require('./modules/sender');
+const msgmigrate = require('./modules/msgmigrate');
+const cleanupMod = require('./modules/cleanup');
+const sysrepairMod = require('./modules/sysrepair');
 
 const BILIBILI = 'https://space.bilibili.com/3706994888280144?spm_id_from=333.1007.0.0';
 const APP_INFO = {
@@ -549,6 +552,88 @@ function bootstrap() {
     });
 
     // ---------- QQ 版本检测与更新向导 ----------
+    // ---------- 系统清理助手 ----------
+    ipcMain.handle('cleanup:scan', async () => {
+      try { return await cleanupMod.scan(); }
+      catch (err) { return { ok: false, error: err.message, items: [], processes: [] }; }
+    });
+
+    ipcMain.handle('cleanup:uninstall', async (e, item) => {
+      try { return await cleanupMod.launchUninstaller(item || {}); }
+      catch (err) { return { ok: false, error: err.message }; }
+    });
+
+    ipcMain.handle('cleanup:openDir', (e, item) => {
+      try { return cleanupMod.openInstallDir(item || {}); }
+      catch (err) { return { ok: false, error: err.message }; }
+    });
+
+    ipcMain.handle('cleanup:openHuorong', () => {
+      try { return cleanupMod.openHuorongSite(); }
+      catch (err) { return { ok: false, error: err.message }; }
+    });
+
+    // ---------- 系统文件修复 ----------
+    ipcMain.handle('sysrepair:info', async () => {
+      try { return { ok: true, data: await sysrepairMod.getHealthInfo() }; }
+      catch (err) { return { ok: false, error: err.message }; }
+    });
+
+    ipcMain.handle('sysrepair:run', async (e, which) => {
+      try {
+        const send = (line) => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('sysrepair:line', String(line || ''));
+          }
+        };
+        const r = which === 'dism'
+          ? await sysrepairMod.runDism(send)
+          : await sysrepairMod.runSfc(send);
+        return { ok: r.ok, code: r.code };
+      } catch (err) { return { ok: false, error: err.message }; }
+    });
+    // ---------- 重启应用（补丁应用后用） ----------
+    ipcMain.handle('app:relaunch', () => {
+      try {
+        app.relaunch();
+        setTimeout(() => app.exit(0), 300);
+        return { ok: true };
+      } catch (err) { return { ok: false, error: err.message }; }
+    });
+    // ---------- 增量补丁 ----------
+    ipcMain.handle('update:applyPatch', async (e, args) => {
+      try {
+        const patch = (args && args.patch) || {};
+        if (!patch.url || !patch.sha256) return { ok: false, error: '补丁信息不完整' };
+
+        // app 目录：green 版是 resources/app，安装版也是 resources/app
+        const appDir = path.join(process.resourcesPath || path.dirname(app.getAppPath()), 'app');
+        // 安全校验：必须是名为 app 的目录，且含 main.js，避免覆盖错位置
+        if (!fs.existsSync(appDir)) return { ok: false, error: '找不到 app 目录: ' + appDir };
+        if (path.basename(appDir) !== 'app') return { ok: false, error: 'appDir 路径异常: ' + appDir };
+        if (!fs.existsSync(path.join(appDir, 'main.js'))) return { ok: false, error: 'app 目录不完整（缺 main.js）: ' + appDir };
+        if (/\.asar$/i.test(appDir)) return { ok: false, error: '不允许写 asar 包: ' + appDir };
+
+        const send = (payload) => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('update:progress', payload);
+          }
+        };
+
+        const r = await updater.patcher.applyPatch({
+          patchUrl: patch.url,
+          appDir,
+          expectSha256: patch.sha256,
+          onProgress: (got, total) => send({ percent: total > 0 ? Math.round(got / total * 100) : 0, received: got, total, patch: true })
+        });
+
+        if (r.ok) {
+          send({ percent: 100, done: true, patch: true });
+          return { ok: true, applied: r.applied.length, appDir };
+        }
+        return r;
+      } catch (err) { return { ok: false, error: err.message }; }
+    });
     // ---------- 主页 AI 发送 ----------
     ipcMain.handle('send:status', async () => {
       try {
@@ -1110,9 +1195,120 @@ ${input.content.slice(0, 4000)}
     });
 
     // ---------- QQ 历史消息 ----------
+    // ---------- 消息目录：查询 / 预览迁移 / 设置并迁移 ----------
+    ipcMain.handle('msgdir:get', () => {
+      try {
+        const cur = resolveMsgDir();
+        return {
+          ok: true,
+          current: cur,
+          isDefault: path.resolve(cur).toLowerCase() === getDefaultMsgDir().toLowerCase(),
+          defaultDir: getDefaultMsgDir(),
+          count: msgmigrate.listLogs(cur).length
+        };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+
+    ipcMain.handle('msgdir:preview', (e, targetDir) => {
+      try {
+        const cur = resolveMsgDir();
+        const target = String(targetDir || '').trim();
+        if (!target) return { ok: false, error: '请选择目标文件夹' };
+        const abs = path.isAbsolute(target) ? target : path.resolve(path.join(runtimePath, 'tianlu_bot', target));
+        const pre = msgmigrate.previewMigrate(cur, abs);
+        return { ok: true, from: cur, to: abs, count: pre.count, files: pre.files, same: pre.same, error: pre.error };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+
+    ipcMain.handle('msgdir:set', async (e, targetDir) => {
+      try {
+        const cur = resolveMsgDir();
+        const target = String(targetDir || '').trim();
+        if (!target) return { ok: false, error: '请选择目标文件夹' };
+        const abs = path.isAbsolute(target) ? target : path.resolve(path.join(runtimePath, 'tianlu_bot', target));
+        if (path.resolve(abs).toLowerCase() === path.resolve(cur).toLowerCase()) {
+          return { ok: false, error: '与当前目录相同' };
+        }
+
+        // 1) 迁移已有文件
+        const mig = msgmigrate.migrateMessages({ from: cur, to: abs });
+        if (!mig.ok) return { ok: false, error: '迁移失败: ' + mig.error, migrated: mig };
+
+        // 2) 写入 .env
+        const envfile = require('./modules/envfile');
+        envfile.updateEnv(path.join(getRtPath(), 'tianlu_bot', '.env'), { MESSAGE_DIR: abs });
+
+        return {
+          ok: true,
+          from: cur,
+          to: abs,
+          copied: mig.copied.length,
+          renamed: mig.renamed,
+          removed: mig.removed.length,
+          removedDirs: mig.removedDirs,
+          note: '已切换目录，重启机器人后新消息写入新位置'
+        };
+      } catch (err) { return { ok: false, error: err.message }; }
+    });
+
+    ipcMain.handle('msgdir:reset', async () => {
+      try {
+        const cur = resolveMsgDir();
+        const mig = msgmigrate.migrateMessages({ from: cur, to: getDefaultMsgDir() });
+        if (!mig.ok) return { ok: false, error: '迁移失败: ' + mig.error };
+        const envfile = require('./modules/envfile');
+        envfile.updateEnv(path.join(getRtPath(), 'tianlu_bot', '.env'), { MESSAGE_DIR: '' });
+        return { ok: true, to: getDefaultMsgDir(), copied: mig.copied.length };
+      } catch (err) { return { ok: false, error: err.message }; }
+    });
+
+    ipcMain.handle('msgdir:pick', async () => {
+      try {
+        const r = await dialog.showOpenDialog(mainWindow, {
+          title: '选择消息记录存放文件夹',
+          properties: ['openDirectory', 'createDirectory']
+        });
+        if (r.canceled || !r.filePaths.length) return { ok: false, canceled: true };
+        return { ok: true, path: r.filePaths[0] };
+      } catch (err) { return { ok: false, error: err.message }; }
+    });
+    // ---------- 消息记录目录（可自定义，支持迁移） ----------
+    // 优先级：.env 的 MESSAGE_DIR → 默认 runtime/tianlu_bot/logs/messages
+    // ★ 注意：runtimePath 可能在启动早期还是空字符串，
+    //   所以这里每次调用时都重新取一次真实路径，不能缓存成常量。
+    function getRtPath() {
+      try {
+        const p = require('./modules/runtime').getRuntimePath();
+        if (p && fs.existsSync(p)) return p;
+      } catch (e) {}
+      return runtimePath || '';
+    }
+
+    function getDefaultMsgDir() {
+      return path.resolve(path.join(getRtPath(), 'tianlu_bot', 'logs', 'messages'));
+    }
+
+    function resolveMsgDir() {
+      try {
+        const rt = getRtPath();
+        const envPath = path.join(rt, 'tianlu_bot', '.env');
+        if (fs.existsSync(envPath)) {
+          const txt = fs.readFileSync(envPath, 'utf8');
+          const m = /^\s*MESSAGE_DIR\s*=\s*(.*)$/m.exec(txt);
+          if (m) {
+            const raw = String(m[1] || '').trim().replace(/^["']|["']$/g, '');
+            if (raw) {
+              const p = path.isAbsolute(raw) ? raw : path.resolve(path.join(rt, 'tianlu_bot', raw));
+              return p;
+            }
+          }
+        }
+      } catch (e) {}
+      return getDefaultMsgDir();
+    }
     ipcMain.handle('msg:list', () => {
       try {
-        const d = path.join(runtimePath, 'tianlu_bot', 'logs', 'messages');
+        const d = resolveMsgDir();
         if (!fs.existsSync(d)) return [];
         return fs.readdirSync(d).filter(f => f.endsWith('.log')).map(f => ({ name: f, size: fs.statSync(path.join(d, f)).size, mtime: fs.statSync(path.join(d, f)).mtimeMs })).sort((a, b) => b.mtime - a.mtime);
       } catch (e) { return []; }
@@ -1121,7 +1317,7 @@ ${input.content.slice(0, 4000)}
       const safe = path.basename(String(name || ''));
       if (!safe.endsWith('.log')) return '';
       try {
-        const p = path.join(runtimePath, 'tianlu_bot', 'logs', 'messages', safe);
+        const p = path.join(resolveMsgDir(), safe);
         const buf = fs.readFileSync(p);
         // 只返回最后 200KB，避免巨量内容卡界面
         const slice = buf.length > 200 * 1024 ? buf.slice(buf.length - 200 * 1024) : buf;

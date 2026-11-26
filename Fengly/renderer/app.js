@@ -62,6 +62,12 @@ function applyWallStyle() {
   r.style.setProperty('--wall-alpha', Math.max(0.2, Math.min(0.95, op)).toString());
   r.style.setProperty('--wall-blur', blur + 'px');
 }
+// 只有用户手动点「检查更新」时才提示，自动检查时静默
+function showToastIfManual(st, msg) {
+  try {
+    if (st && st.manual) toast(msg, 'warn');
+  } catch (e) {}
+}
 function initUpdater() {
   bridge.onUpdateStatus((st) => {
     state.updateInfo = st;
@@ -84,6 +90,13 @@ function initUpdater() {
       if (goBtn) goBtn.style.display = urlOk ? '' : 'none';
       const pageBtn = document.getElementById('btn-update-page');
       if (pageBtn) pageBtn.style.display = urlOk ? 'none' : '';
+      // 有补丁时按钮文案提示用户「只下几 MB」
+      const hasPatch = !!(st.patch && st.patch.url && st.patch.sha256);
+      const goBtnEl = document.getElementById("btn-update-go");
+      if (goBtnEl && hasPatch) {
+        const kb = Math.max(1, Math.round((st.patch.size || 0) / 1024));
+        goBtnEl.textContent = "⚡ 快速更新（仅 " + kb + " KB）";
+      }
       // 下载按钮绑定
       if (goBtn && urlOk) {
         goBtn.onclick = async () => {
@@ -91,6 +104,27 @@ function initUpdater() {
           goBtn.textContent = t('update.downloading');
           const prog = document.getElementById('update-progress');
           if (prog) prog.classList.remove('hidden');
+
+          // ① 先试增量补丁（几 MB），成功就不用下整包
+          if (hasPatch) {
+            try {
+              const pr = await bridge.applyPatch(st.patch);
+              if (pr && pr.ok) {
+                const n = pr.applied || 0;
+                toast("✅ 快速更新完成（" + n + " 个文件），正在重启…", "ok");
+                if (prog) prog.classList.add("hidden");
+                setTimeout(() => { try { bridge.relaunch(); } catch (e) {} }, 1500);
+                return;
+              }
+              // 补丁失败：降级到整包，不打扰用户
+              console.warn("[update] 补丁失败，回退整包:", pr && pr.error);
+              showToastIfManual(st, "补丁更新失败（" + ((pr && pr.error) || "未知原因") + "），改用完整下载");
+            } catch (e) {
+              console.warn("[update] 补丁异常:", e);
+            }
+          }
+
+          // ② 整包下载（原有流程）
           const r = await bridge.downloadUpdate(st.url);
           if (r && r.ok) {
             toast(t('update.downloadedStart'), 'ok');
@@ -1745,6 +1779,29 @@ async function renderFeatures() {
 
 
 /* ============ 消息（三栏） ============ */
+// 重新加载消息文件列表（切换目录后调用）
+async function reloadMsgFileList() {
+  const fl = document.getElementById('msg-file-list');
+  if (!fl) return;
+  let files = [];
+  try { files = await bridge.msgList() || []; } catch (e) { files = []; }
+  if (!files.length) {
+    fl.innerHTML = '<p class="hint" data-i18n="msg.empty"></p>';
+    setLang(state.settings.language || 'zh');
+    return;
+  }
+  fl.innerHTML = files.map(f => {
+    return '<div class="bk-file" data-msg="' + esc(f.name) + '">📄 ' + esc(f.name) +
+      ' <small style="opacity:.55">' + (f.size / 1024).toFixed(0) + 'KB</small></div>';
+  }).join('');
+  fl.querySelectorAll('[data-msg]').forEach(b => {
+    b.onclick = async () => {
+      const content = await bridge.msgRead(b.dataset.msg);
+      const pre = document.getElementById('msg-content');
+      if (pre) pre.textContent = content || '（空）';
+    };
+  });
+}
 async function renderMessages() {
   const el = document.getElementById('page-messages');
   if (!el.dataset.ready) {
@@ -1753,9 +1810,103 @@ async function renderMessages() {
       '<div class="card"><h3>🗣 <span data-i18n="toolbox.tts.title"></span></h3><div id="msg-tts-list" style="max-height:78vh;overflow-y:auto"></div></div>' +
       '<div class="card"><h3>🎧 <span data-i18n="toolbox.music.title"></span></h3><div id="msg-music-list" style="max-height:78vh;overflow-y:auto"></div></div>' +
     '</div>';
+    // 存储位置卡片放在网格下方
+    {
+      const oldCard = document.getElementById("msg-dir-card");
+      if (oldCard) oldCard.remove();
+      const dirCard = document.createElement("div");
+      dirCard.id = "msg-dir-card";
+      dirCard.className = "card";
+      dirCard.style.marginTop = "16px";
+      dirCard.innerHTML =
+        '<h3>📁 存储位置</h3>' +
+        '<p class="hint">消息记录默认存在程序数据目录。可以改到其它盘，切换时会把已有记录一并搬过去。</p>' +
+        '<div id="msg-dir-info" style="margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--bg-2);font-size:12.5px">' +
+        '  <div style="display:flex;justify-content:space-between;gap:10px"><span style="opacity:.7;flex-shrink:0">当前目录</span><b id="msg-dir-path" style="word-break:break-all;text-align:right;font-weight:500"></b></div>' +
+        '  <div style="display:flex;justify-content:space-between;margin-top:4px"><span style="opacity:.7">记录数</span><b id="msg-dir-count">-</b></div>' +
+        '</div>' +
+        '<div class="btn-row" style="margin-top:10px">' +
+        '  <button class="btn sm primary" id="msg-dir-change">选择文件夹</button>' +
+        '  <button class="btn sm" id="msg-dir-reset">恢复默认</button>' +
+        '</div>' +
+        '<div id="msg-dir-result" style="margin-top:10px"></div>';
+      el.appendChild(dirCard);
+    }
     setLang(state.settings.language || 'zh');
     el.dataset.ready = '1';
   }
+// ---------- 消息存储位置 ----------
+  async function refreshMsgDirInfo() {
+    const pathEl = document.getElementById('msg-dir-path');
+    const cntEl = document.getElementById('msg-dir-count');
+    if (!pathEl) return;
+    const r = await bridge.msgDirGet();
+    if (!r || !r.ok) {
+      pathEl.textContent = '读取失败';
+      return;
+    }
+    pathEl.textContent = r.current;
+    pathEl.title = r.current;
+    if (cntEl) cntEl.textContent = (r.count || 0) + ' 天记录' + (r.isDefault ? '（默认）' : '（自定义）');
+  }
+
+  const msgDirChangeBtn = document.getElementById('msg-dir-change');
+  if (msgDirChangeBtn) {
+    msgDirChangeBtn.onclick = async () => {
+      const picked = await bridge.msgDirPick();
+      if (!picked || picked.canceled) return;
+      if (!picked.ok || !picked.path) { toast('选择失败', 'err'); return; }
+
+      // 先预览要迁移多少
+      const pre = await bridge.msgDirPreview(picked.path);
+      if (!pre || !pre.ok) { toast('检查失败：' + ((pre && pre.error) || ''), 'err'); return; }
+      if (pre.same) { toast('和当前目录相同，无需切换', 'err'); return; }
+
+      const msg = pre.count > 0
+        ? '将 ' + pre.count + ' 个历史记录文件迁移到：\n' + pre.to + '\n\n（原目录的文件会被删除）'
+        : '新目录没有历史记录需要迁移。\n目标：' + pre.to;
+      if (!confirm(msg + '\n\n确定切换？')) return;
+
+      const res = await bridge.msgDirSet(picked.path);
+      const box = document.getElementById('msg-dir-result');
+      if (res && res.ok) {
+        if (box) {
+          box.innerHTML =
+            '<div style="padding:10px 12px;border-radius:10px;background:var(--bg-2);font-size:12.5px">' +
+              '<div style="color:var(--ok,#6fdd8f);margin-bottom:4px">✅ 已切换</div>' +
+              '<div style="opacity:.75">迁移 ' + (res.copied || 0) + ' 个文件' +
+                (res.renamed && res.renamed.length ? '，其中 ' + res.renamed.length + ' 个重名已改名保存' : '') + '</div>' +
+              (res.removedDirs && res.removedDirs.length ? '<div style="opacity:.6;font-size:11.5px;margin-top:4px">原空目录已清理</div>' : '') +
+              '<div style="opacity:.7;font-size:11.5px;margin-top:6px">' + esc(res.note || '') + '</div>' +
+            '</div>';
+        }
+        await refreshMsgDirInfo();
+        try { await reloadMsgFileList(); } catch (e) {}
+        toast('存储位置已切换', 'ok');
+      } else {
+        if (box) box.innerHTML = '<div style="color:var(--err);font-size:12.5px">❌ ' + esc((res && res.error) || '切换失败') + '</div>';
+        toast('切换失败', 'err');
+      }
+    };
+  }
+
+  const msgDirResetBtn = document.getElementById('msg-dir-reset');
+  if (msgDirResetBtn) {
+    msgDirResetBtn.onclick = async () => {
+      if (!confirm('恢复默认目录？\n当前目录的记录会被迁移回默认位置。')) return;
+      const res = await bridge.msgDirReset();
+      if (res && res.ok) {
+        toast('已恢复默认目录（迁移 ' + (res.copied || 0) + ' 个文件）', 'ok');
+        await refreshMsgDirInfo();
+        try { await reloadMsgFileList(); } catch (e) {}
+      } else {
+        toast('恢复失败：' + ((res && res.error) || ''), 'err');
+      }
+    };
+  }
+
+  if (document.getElementById('msg-dir-path')) refreshMsgDirInfo();
+
   const renderMediaInto = async (elId, kind, fetchFn) => {
     const el = document.getElementById(elId);
     if (!el) return;
@@ -1906,6 +2057,7 @@ async function renderToolbox() {
         <button class="tab-btn" data-tbtab="code">📝 代码编辑</button>
         <button class="tab-btn" data-tbtab="feedback">💬 反馈</button>
         <button class="tab-btn" data-tbtab="commands">📋 命令速查</button>
+        <button class="tab-btn" data-tbtab="cleanup">🧹 系统清理</button>
       </div>
       <div class="tb-panel" id="tb-panel-main">
       <div class="card" style="margin-bottom:16px">
@@ -2018,7 +2170,33 @@ async function renderToolbox() {
           </div>
         </div>
         <div id="tb-cmd-body"></div>
-      </div><!-- /tb-panel-commands -->`;
+      </div><!-- /tb-panel-commands -->
+
+      <div class="tb-panel" id="tb-panel-cleanup" style="display:none">
+        <div class="card" style="margin-bottom:14px">
+          <h3>🧹 系统清理助手</h3>
+          <p class="hint">扫描并清理安全软件 / 清理优化软件。网盘类、火绒、系统组件会自动保护，不会被卸载。</p>
+          <div class="btn-row" style="margin-top:10px">
+            <button class="btn primary sm" id="cleanup-scan">🔍 开始扫描</button>
+            <button class="btn sm" id="cleanup-huorong">🛡 打开火绒官网</button>
+          </div>
+        </div>
+        <div id="cleanup-list"></div>
+
+        <div class="card" style="margin-top:14px">
+          <h3>🔧 系统文件修复</h3>
+          <p class="hint">调用微软官方工具检查并修复系统文件。不下载、不替换任何文件，安全无副作用。需要管理员权限。</p>
+          <div id="sysrepair-info" style="margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--bg-2);font-size:12.5px">
+            <span style="opacity:.7">点「检查环境」查看状态</span>
+          </div>
+          <div class="btn-row" style="margin-top:10px">
+            <button class="btn sm" id="sysrepair-check">🩺 检查环境</button>
+            <button class="btn sm primary" id="sysrepair-sfc">▶ 运行 SFC 修复</button>
+            <button class="btn sm" id="sysrepair-dism">▶ 运行 DISM 修复</button>
+          </div>
+          <pre id="sysrepair-log" style="margin-top:10px;max-height:280px;overflow-y:auto;background:var(--bg-3);border-radius:8px;padding:10px;font-size:11.5px;white-space:pre-wrap;display:none"></pre>
+        </div>
+      </div><!-- /tb-panel-cleanup -->`;
     // 子标签切换
     const tbTabs = document.getElementById('tb-tabs');
     if (tbTabs) {
@@ -2026,7 +2204,7 @@ async function renderToolbox() {
         btn.onclick = () => {
           const tab = btn.dataset.tbtab;
           tbTabs.querySelectorAll('[data-tbtab]').forEach(b => b.classList.toggle('active', b === btn));
-          ['main', 'code', 'feedback', 'commands'].forEach(t => {
+          ['main', 'code', 'feedback', 'commands', 'cleanup'].forEach(t => {
             const panel = document.getElementById('tb-panel-' + t);
             if (panel) panel.style.display = (t === tab) ? '' : 'none';
           });
@@ -2034,6 +2212,7 @@ async function renderToolbox() {
           if (tab === 'code' && !state.tbCodeReady) { state.tbCodeReady = true; initToolboxCode(); }
           if (tab === 'feedback' && !state.tbFbReady) { state.tbFbReady = true; initToolboxFeedback(); }
           if (tab === 'commands' && !state.tbCmdReady) { state.tbCmdReady = true; initToolboxCommands(); }
+          if (tab === 'cleanup' && !state.tbCleanupReady) { state.tbCleanupReady = true; initToolboxCleanup(); }
         };
       });
     }
@@ -2330,6 +2509,170 @@ async function initToolboxCode() {
       } catch (e) { toast('保存失败：' + e.message, 'err'); }
     };
   }
+}
+/* ============ 工具箱 · 系统清理 ============ */
+async function initToolboxCleanup() {
+  const scanBtn = document.getElementById('cleanup-scan');
+  const hrBtn = document.getElementById('cleanup-huorong');
+  const listBox = document.getElementById('cleanup-list');
+
+  if (hrBtn) hrBtn.onclick = () => bridge.cleanupOpenHuorong();
+
+  if (scanBtn) {
+    scanBtn.onclick = async () => {
+      scanBtn.disabled = true;
+      scanBtn.textContent = '扫描中…';
+      if (listBox) listBox.innerHTML = '<div class="card"><p class="hint">正在扫描已安装软件…</p></div>';
+
+      const r = await bridge.cleanupScan();
+      scanBtn.disabled = false;
+      scanBtn.textContent = '🔍 重新扫描';
+      if (!listBox) return;
+
+      if (!r || !r.ok) {
+        listBox.innerHTML = '<div class="card"><p style="color:var(--err)">扫描失败：' + esc((r && r.error) || '') + '</p></div>';
+        return;
+      }
+
+      const items = r.items || [];
+      const targets = items.filter((x) => !x.protected);
+      const protectedItems = items.filter((x) => x.protected);
+
+      let html = '';
+
+      if (!targets.length) {
+        html += '<div class="card"><h3>✅ 未发现需要清理的软件</h3>' +
+          '<p class="hint">没有检测到 360、鲁大师、一键清理等软件。</p></div>';
+      } else {
+        html += '<div class="card"><h3>⚠️ 发现 ' + targets.length + ' 个可清理软件</h3>' +
+          '<p class="hint">点「卸载」会调出该软件自己的卸载程序，由你在它的窗口里确认。</p>' +
+          '<div style="margin-top:10px">' +
+          targets.map((it) => {
+            return '<div class="cleanup-item">' +
+              '<div style="flex:1;min-width:0">' +
+                '<div><b>' + esc(it.name) + '</b> <span class="pl-badge">' + esc(it.matchedLabel) + '</span></div>' +
+                (it.version ? '<div style="opacity:.6;font-size:11.5px">v' + esc(it.version) + (it.publisher ? ' · ' + esc(it.publisher) : '') + '</div>' : '') +
+              '</div>' +
+              '<div class="btn-row" style="margin:0;flex-shrink:0">' +
+                '<button class="btn sm" data-open="' + esc(it.name) + '">📂 目录</button>' +
+                '<button class="btn sm danger" data-uninst="' + esc(it.name) + '">🗑 卸载</button>' +
+              '</div>' +
+            '</div>';
+          }).join('') +
+          '</div></div>';
+      }
+
+      if (protectedItems.length) {
+        html += '<div class="card" style="margin-top:12px"><h3>🛡 已保护（不会卸载）</h3>' +
+          '<p class="hint">这些是网盘、火绒或系统组件，按你的要求保留。</p>' +
+          '<div style="margin-top:8px">' +
+          protectedItems.map((it) =>
+            '<div style="padding:6px 10px;border-radius:8px;background:var(--bg-2);margin-bottom:6px;font-size:12.5px;opacity:.75">' +
+              esc(it.name) + ' <span class="pl-badge">' + esc(it.matchedLabel) + '</span></div>'
+          ).join('') +
+          '</div></div>';
+      }
+
+      if (r.processes && r.processes.length) {
+        html += '<div class="card" style="margin-top:12px"><h3>⚙️ 正在运行的相关进程</h3>' +
+          r.processes.map((p) => '<div style="padding:4px 0;font-size:12.5px;opacity:.8">' + esc(p.ProcessName) + ' (PID ' + p.ProcessId + ')</div>').join('') +
+          '</div>';
+      }
+
+      listBox.innerHTML = html;
+
+      // 按钮绑定
+      listBox.querySelectorAll('[data-uninst]').forEach((btn) => {
+        btn.onclick = async () => {
+          const name = btn.dataset.uninst;
+          const it = targets.find((x) => x.name === name);
+          if (!it) return;
+          if (!it.uninstallString) {
+            toast('这个软件没有卸载命令（可能是绿色版）', 'err');
+            return;
+          }
+          if (!confirm('即将调出「' + name + '」的卸载程序。\n\n注意：\n· 在它自己的窗口里点确认\n· 有些软件卸载后会偷偷装回来，卸载完建议重启再扫描一次\n\n继续？')) return;
+
+          btn.disabled = true;
+          btn.textContent = '已启动…';
+          const r2 = await bridge.cleanupUninstall(it);
+          if (r2 && r2.ok) {
+            toast('已启动卸载程序，请在弹出的窗口里操作', 'ok');
+          } else {
+            toast('启动失败：' + ((r2 && r2.error) || ''), 'err');
+          }
+          btn.disabled = false;
+          btn.textContent = '🗑 卸载';
+        };
+      });
+
+      listBox.querySelectorAll('[data-open]').forEach((btn) => {
+        btn.onclick = () => {
+          const name = btn.dataset.open;
+          const it = targets.find((x) => x.name === name);
+          if (it) bridge.cleanupOpenDir(it);
+        };
+      });
+    };
+  }
+
+  // ---------- 系统修复 ----------
+  const logEl = document.getElementById('sysrepair-log');
+  const infoEl = document.getElementById('sysrepair-info');
+
+  try {
+    bridge.onSysrepairLine((line) => {
+      if (!logEl) return;
+      logEl.style.display = '';
+      logEl.textContent += line + '\n';
+      logEl.scrollTop = logEl.scrollHeight;
+    });
+  } catch (e) {}
+
+  const checkBtn = document.getElementById('sysrepair-check');
+  if (checkBtn) {
+    checkBtn.onclick = async () => {
+      checkBtn.disabled = true;
+      checkBtn.textContent = '检查中…';
+      const r = await bridge.sysrepairInfo();
+      checkBtn.disabled = false;
+      checkBtn.textContent = '🩺 检查环境';
+      if (!infoEl) return;
+      if (!r || !r.ok) {
+        infoEl.innerHTML = '<span style="color:var(--err)">检查失败：' + esc((r && r.error) || '') + '</span>';
+        return;
+      }
+      const d = r.data;
+      infoEl.innerHTML =
+        '<div style="display:flex;justify-content:space-between;margin-bottom:3px"><span>系统</span><b>' + esc(d.os || '?') + '</b></div>' +
+        '<div style="display:flex;justify-content:space-between;margin-bottom:3px"><span>管理员权限</span><b style="color:' + (d.admin ? 'var(--ok,#6fdd8f)' : 'var(--err)') + '">' + (d.admin ? '✅ 已有' : '❌ 需要') + '</b></div>' +
+        '<div style="display:flex;justify-content:space-between;margin-bottom:3px"><span>系统盘剩余</span><b>' + (d.diskFreeGB || 0) + ' GB</b></div>' +
+        '<div style="display:flex;justify-content:space-between"><span>Windows Update 服务</span><b>' + esc(d.wuService || '?') + '</b></div>' +
+        (!d.admin ? '<div style="margin-top:8px;color:var(--warn,#f5b942);font-size:11.5px">⚠️ 修复需要管理员权限。请关闭程序，右键「以管理员身份运行」后重试。</div>' : '');
+    };
+  }
+
+  const runRepair = (which, btnId) => {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    btn.onclick = async () => {
+      const label = which === 'dism' ? 'DISM' : 'SFC';
+      if (!confirm('即将运行 ' + label + ' 系统修复。\n\n· 需要管理员权限\n· 可能需要 5~30 分钟\n· 期间请勿关闭程序\n\n继续？')) return;
+      btn.disabled = true;
+      btn.textContent = '运行中…';
+      if (logEl) { logEl.textContent = ''; logEl.style.display = ''; }
+      const r = await bridge.sysrepairRun(which);
+      btn.disabled = false;
+      btn.textContent = '▶ 运行 ' + label + ' 修复';
+      if (r && r.ok) {
+        toast(label + ' 修复完成', 'ok');
+      } else {
+        toast(label + ' 结束（退出码 ' + ((r && r.code) || '?') + '），请看日志', 'err');
+      }
+    };
+  };
+  runRepair('sfc', 'sysrepair-sfc');
+  runRepair('dism', 'sysrepair-dism');
 }
 /* ============ 工具箱 · 命令速查面板 ============ */
 async function initToolboxCommands() {

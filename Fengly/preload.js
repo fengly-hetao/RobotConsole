@@ -81,6 +81,11 @@ contextBridge.exposeInMainWorld('api', {
   cloneVoice: (opts) => invoke('audio:clone', opts),
   listTtsAudio: () => invoke('media:listTts'),
   listMusicAudio: () => invoke('media:listMusic'),
+  msgDirGet: () => invoke('msgdir:get'),
+  msgDirPreview: (d) => invoke('msgdir:preview', d),
+  msgDirSet: (d) => invoke('msgdir:set', d),
+  msgDirReset: () => invoke('msgdir:reset'),
+  msgDirPick: () => invoke('msgdir:pick'),
   msgList: () => invoke('msg:list'),
   msgRead: (name) => invoke('msg:read', name),
 
@@ -90,6 +95,17 @@ contextBridge.exposeInMainWorld('api', {
   pluginsInstall: (type) => invoke('plugins:install', { type }),
   pluginsRemove: (type, name) => invoke('plugins:remove', { type, name }),
   pluginsOpenFolder: (type) => invoke('plugins:openFolder', type),
+
+  // 系统清理助手
+  cleanupScan: () => invoke('cleanup:scan'),
+  cleanupUninstall: (item) => invoke('cleanup:uninstall', item),
+  cleanupOpenDir: (item) => invoke('cleanup:openDir', item),
+  cleanupOpenHuorong: () => invoke('cleanup:openHuorong'),
+
+  // 系统文件修复
+  sysrepairInfo: () => invoke('sysrepair:info'),
+  sysrepairRun: (which) => invoke('sysrepair:run', which),
+  onSysrepairLine: (cb) => on('sysrepair:line', cb),
 
   // 主页 AI 发送
   sendStatus: () => invoke('send:status'),
@@ -112,13 +128,15 @@ contextBridge.exposeInMainWorld('api', {
   qqDownloadInstaller: (url, destDir) => invoke('qq:downloadInstaller', { url, destDir }),
   qqRunInstaller: (filePath) => invoke('qq:runInstaller', filePath),
   qqOpenDownloadPage: () => invoke('qq:openDownloadPage'),
-  onQQDownloadProgress: (cb) => on('qq:downloadProgress', cb),
+  onQQDownloadProgress: (cb) => on('qq:downloadProgress', 'sysrepair:line', cb),
   onUpdateStatus: (cb) => on('update:status', cb),
+  applyPatch: (patch) => invoke('update:applyPatch', { patch }),
+  relaunch: () => invoke('app:relaunch'),
   onUpdateProgress: (cb) => on('update:progress', cb),
 
   // 事件订阅
   on: (channel, cb) => {
-    const valid = ['proc:log', 'proc:status', 'python:log', 'sys:info', 'term:data', 'crash', 'progress', 'update:progress', 'update:status', 'qq:downloadProgress'];
+    const valid = ['proc:log', 'proc:status', 'python:log', 'sys:info', 'term:data', 'crash', 'progress', 'update:progress', 'update:status', 'qq:downloadProgress', 'sysrepair:line'];
     if (valid.includes(channel)) {
       const listener = (e, payload) => cb(payload);
       ipcRenderer.on(channel, listener);

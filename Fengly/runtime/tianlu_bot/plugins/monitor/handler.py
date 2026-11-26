@@ -9,8 +9,27 @@ from core.config import PROJECT_ROOT, BOT_QQ, FEEDBACK_GROUP_ID, is_enabled
 monitor = on_message(priority=99, block=False)
 
 # QQ 历史消息永久保留：按天一个文件，不自动删除
-MSG_LOG_DIR = PROJECT_ROOT / "logs" / "messages"
-MSG_LOG_DIR.mkdir(parents=True, exist_ok=True)
+# 存储位置可通过 .env 的 MESSAGE_DIR 自定义（留空 = 默认 runtime/tianlu_bot/logs/messages）
+def _resolve_msg_dir() -> Path:
+    import os as _os
+    raw = (_os.environ.get("MESSAGE_DIR") or "").strip().strip('"').strip("'")
+    if not raw:
+        return PROJECT_ROOT / "logs" / "messages"
+    p = Path(raw)
+    # 相对路径按项目根解析，绝对路径直接用
+    if not p.is_absolute():
+        p = PROJECT_ROOT / p
+    return p
+
+
+MSG_LOG_DIR = _resolve_msg_dir()
+try:
+    MSG_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    logger.info(f"📁 消息记录目录: {MSG_LOG_DIR}")
+except Exception as _e:
+    logger.warning(f"⚠️ 消息目录创建失败（{MSG_LOG_DIR}），回退到默认目录: {_e}")
+    MSG_LOG_DIR = PROJECT_ROOT / "logs" / "messages"
+    MSG_LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @monitor.handle()

@@ -151,7 +151,24 @@ async function checkUpdate(feedUrl, currentVersion) {
   const notes = String(data.notes || '');
   const force = !!data.force;
   const hasUpdate = latest && compareVersions(latest, currentVersion) > 0;
-  return { hasUpdate, latest, url: dlUrl, notes, force, raw: data, feedUrl: got.url };
+
+  // 增量补丁：只对「当前版本 → 最新版本」这一跳有效
+  // update.json 里的 patch 可以是单个对象，也可以是数组（多条升级路径）
+  let patch = null;
+  try {
+    const rawPatch = data.patch;
+    if (rawPatch) {
+      const list = Array.isArray(rawPatch) ? rawPatch : [rawPatch];
+      // 统一去掉 v/V 前缀再比较，避免 "v1.9.5" 与 "1.9.5" 匹配不上
+      const norm = (v) => String(v || '').trim().replace(/^[vV]/, '');
+      const cur = norm(currentVersion);
+      const lat = norm(latest);
+      patch = list.find((p) => p && norm(p.from) === cur && norm(p.to) === lat) || null;
+      if (patch && (!patch.url || !patch.sha256)) patch = null;   // 信息不全就不用
+    }
+  } catch (e) { patch = null; }
+
+  return { hasUpdate, latest, url: dlUrl, notes, force, raw: data, feedUrl: got.url, patch };
 }
 
 // 下载更新包到指定目录，返回本地路径
@@ -325,7 +342,10 @@ function isExecutable(filePath) {
   }
 }
 
+const patcher = require('./patcher');
+
 module.exports = {
+  patcher,
   checkUpdate, compareVersions,
   resolve123panShare, build123panDirectUrl,
   downloadUpdate, extractSetup,
