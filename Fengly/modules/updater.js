@@ -93,13 +93,23 @@ function expandFeedTargets(feedUrl) {
     for (const br of branches) {
       const p = 'update.json';
       const rawUrl = `https://raw.githubusercontent.com/${user}/${repo}/${br}/${p}`;
-      out.push(
-        rawUrl,                                                          // ① 官方 raw（无缓存，最准确；实测国内多数可直连）
-        `https://gh-proxy.com/${rawUrl}`,                                // ② 代理原站（无缓存，~1s）
-        `https://ghproxy.net/${rawUrl}`,                                 // ③ 代理原站备用
-        `https://cdn.jsdelivr.net/gh/${user}/${repo}@${br}/${p}`,        // ④ jsDelivr（最快 ~0.7s，但有缓存延迟）
-        `https://fastly.jsdelivr.net/gh/${user}/${repo}@${br}/${p}`      // ⑤ jsDelivr 备用节点
-      );
+        // ★ 顺序很重要：国内直连优先，GitHub 官方放最后。
+        //   之前把 raw.githubusercontent.com 放第一个，国内不通时要干等 8 秒超时，
+        //   用户体感就是「卡住 / 没反应」。
+        // ★ 顺序按实测速度排（无代理直连，2026-11 实测）：
+        //   gh-proxy.com 1.8s < ghfast.top 1.9s < fastly.jsdelivr 2.0s
+        //   < gcore.jsdelivr 2.8s < cdn.jsdelivr 5.9s < ghproxy.net 9.2s
+        //   已剔除失效源：ghproxy.cc / mirror.ghproxy / github.moeyy
+        //   raw.githubusercontent.com 国内基本不通，放最后兜底。
+        out.push(
+          `https://gh-proxy.com/${rawUrl}`,
+          `https://ghfast.top/${rawUrl}`,
+          `https://fastly.jsdelivr.net/gh/${user}/${repo}@${br}/${p}`,
+          `https://gcore.jsdelivr.net/gh/${user}/${repo}@${br}/${p}`,
+          `https://cdn.jsdelivr.net/gh/${user}/${repo}@${br}/${p}`,
+          `https://ghproxy.net/${rawUrl}`,
+          rawUrl
+        );
     }
     return out;
   }

@@ -1803,20 +1803,19 @@ JSON 必须包含以下字段：
     // settings.json 里写 "autoUpdate": true 可强制开启 / false 强制关闭
     // =====================================================================
     const _curVer = currentAppVersion();
-    const _vParts = String(_curVer || '0.0.0').replace(/^v/i, '').split('.').map((x) => parseInt(x, 10) || 0);
-    const _needAutoPrompt = (_vParts[0] < 1) ||
-      (_vParts[0] === 1 && _vParts[1] < 9) ||
-      (_vParts[0] === 1 && _vParts[1] === 9 && _vParts[2] <= 5);   // <= 1.9.5
 
-    let _autoUpdate = _needAutoPrompt;
+    // ★ 所有版本都自动检查更新。
+    //   之前因为「NapCat 停更、怕拉到坏版本」关掉了自动检查，结果老用户永远收不到升级提示。
+    //   update.json 现在由我们自己维护，指向的是已验证可用的安装包，所以可以放心自动检查。
+    //   只有用户在 settings.json 里明确写 "autoUpdate": false 才关闭。
+    let _autoUpdate = true;
     try {
       const forced = store.get('autoUpdate');
-      if (forced === true) _autoUpdate = true;
-      else if (forced === false) _autoUpdate = false;
+      if (forced === false) _autoUpdate = false;
     } catch (e) {}
 
     if (_autoUpdate) {
-      const delay = _needAutoPrompt ? 8000 : 15000;
+      const delay = 8000;   // 启动 8 秒后就查一次
       setTimeout(() => runUpdateCheck(false), delay);
       setInterval(() => runUpdateCheck(false), 30 * 60 * 1000);
       let lastFocusCheck = 0;
@@ -1826,9 +1825,9 @@ JSON 必须包含以下字段：
           runUpdateCheck(false);
         }
       });
-      console.log('[main] 自动更新检查已启用（当前 ' + _curVer + (_needAutoPrompt ? '，老版本需要引导升级' : '') + '）');
+      console.log('[main] 自动更新检查已启用（当前 ' + _curVer + '，启动 8 秒后自动检查）');
     } else {
-      console.log('[main] 自动更新检查已关闭（当前 ' + _curVer + '，可在设置里手动检查）');
+      console.log('[main] 自动更新检查已被 settings.autoUpdate=false 关闭（当前 ' + _curVer + '）');
 
     // QQ 自动更新防护：锁定 runtime QQ，防止 QQ 升级导致 NapCat 失效
     ensureQQLocked();

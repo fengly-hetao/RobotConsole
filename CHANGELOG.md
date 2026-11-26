@@ -1,5 +1,25 @@
 # 更新日志
 
+## [1.9.8] — 2026-11-26
+
+### 🚀 更新检查全面优化
+- **镜像源重排**：国内直连优先（gh-proxy 1.8s / ghfast 1.9s / fastly.jsdelivr 2.0s / gcore 2.8s / cdn.jsdelivr 5.9s / ghproxy.net 9.2s），GitHub 官方放最后兜底
+- **剔除失效源**：ghproxy.cc / mirror.ghproxy.com / github.moeyy.xyz / raw.githubusercontent.com（国内实测全不通）
+- **耗时从 9.5 秒降到 1.4 秒**
+
+### 🔄 所有版本启动时自动检查更新
+- 之前 `_autoUpdate` 默认 `false`（NapCat 停更时关掉的），导致所有用户永远收不到升级提示
+- 现改为默认 `true`，启动 8 秒后自动检查
+- 只有用户在 settings.json 里明确写 `"autoUpdate": false` 才关闭
+
+### 📦 继承 1.9.7 全部功能
+QQ 自动更新防护、消息存储自定义、系统清理助手、系统文件修复、入群欢迎、30 个游戏菜单补全等。
+
+### ⚠️ 重要说明
+- NapCat 已于 2026-11-14 停止更新并删除仓库，当前内置 v4.18.41 本地自包含
+- QQ 需保持 9.9.33，本程序会自动锁定 runtime QQ 防止被升级
+
+---
 ## [1.9.7] — 2026-11-26
 
 ### 🛡 重要：QQ 自动更新防护
