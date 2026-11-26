@@ -3486,6 +3486,9 @@ async function boot() {
   }
   document.getElementById('app').classList.remove('hidden');
   applyWallpaper();
+  // ★ 注册更新事件监听（之前 initUpdater 定义了但从未调用，导致自动更新检查结果推送不到界面）
+  try { initUpdater(); } catch (e) { console.error('initUpdater failed', e); }
+
   console.log('[renderer] boot complete, runtime=', state.appInfo && state.appInfo.runtimePath);
   setTimeout(() => document.getElementById('boot-overlay').classList.add('done'), 400);
 }

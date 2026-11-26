@@ -3,6 +3,24 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const invoke = (channel, ...args) => ipcRenderer.invoke(channel, ...args);
 
+// 事件订阅（必须定义在 exposeInMainWorld 之前：
+// 下面 onUpdateStatus / onSysrepairLine 等方法会直接调用它，
+// 若等对象里的 on 属性定义完再用就已经晚了 —— 之前就是因此报 "on is not defined"。)
+const ALLOWED_EVENTS = [
+  'proc:log', 'proc:status', 'python:log', 'sys:info', 'term:data',
+  'crash', 'progress', 'update:progress', 'update:status',
+  'qq:downloadProgress', 'sysrepair:line'
+];
+
+function on(channel, cb) {
+  if (!ALLOWED_EVENTS.includes(channel)) return () => {};
+  const listener = (e, payload) => {
+    try { cb(payload); } catch (err) { console.error('[preload] listener error', channel, err); }
+  };
+  ipcRenderer.on(channel, listener);
+  return () => ipcRenderer.removeListener(channel, listener);
+}
+
 contextBridge.exposeInMainWorld('api', {
   appInfo: () => invoke('app:info'),
 
@@ -128,20 +146,12 @@ contextBridge.exposeInMainWorld('api', {
   qqDownloadInstaller: (url, destDir) => invoke('qq:downloadInstaller', { url, destDir }),
   qqRunInstaller: (filePath) => invoke('qq:runInstaller', filePath),
   qqOpenDownloadPage: () => invoke('qq:openDownloadPage'),
-  onQQDownloadProgress: (cb) => on('qq:downloadProgress', 'sysrepair:line', cb),
+  onQQDownloadProgress: (cb) => on('qq:downloadProgress', cb),
   onUpdateStatus: (cb) => on('update:status', cb),
   applyPatch: (patch) => invoke('update:applyPatch', { patch }),
   relaunch: () => invoke('app:relaunch'),
   onUpdateProgress: (cb) => on('update:progress', cb),
 
   // 事件订阅
-  on: (channel, cb) => {
-    const valid = ['proc:log', 'proc:status', 'python:log', 'sys:info', 'term:data', 'crash', 'progress', 'update:progress', 'update:status', 'qq:downloadProgress', 'sysrepair:line'];
-    if (valid.includes(channel)) {
-      const listener = (e, payload) => cb(payload);
-      ipcRenderer.on(channel, listener);
-      return () => ipcRenderer.removeListener(channel, listener);
-    }
-    return () => {};
-  }
+  on
 });
