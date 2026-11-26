@@ -1,11 +1,19 @@
 {
   "version": "1.9.8",
   "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/%E6%9C%BA%E5%99%A8%E4%BA%BA%E6%8E%A7%E5%88%B6%E5%8F%B0-Setup-1.9.8.exe",
-  "downloadPage": "https://4001880759.share.123pan.cn/123pan/ijXeMh-e6ht3",
+  "downloadPage": "https://4001880759.share.123pan.cn/123pan/ijXeMh-NMme3",
   "extraDownloadPages": [
-    { "label": "安装版（.exe）", "url": "https://4001880759.share.123pan.cn/123pan/ijXeMh-e6ht3" },
-    { "label": "免安装版（.zip）", "url": "https://4001880759.share.123pan.cn/123pan/ijXeMh-lChe3" }
+    { "label": "安装版（.exe）", "url": "https://4001880759.share.123pan.cn/123pan/ijXeMh-NMme3" },
+    { "label": "免安装版（.zip）", "url": "https://4001880759.share.123pan.cn/123pan/ijXeMh-zVGe3" }
   ],
-  "notes": "v1.9.8\n\n【重点】更新检查全面优化 —— 无需代理即可自动升级\n· 镜像源改为国内直连优先（gh-proxy / ghfast / jsDelivr 等 7 个）\n· 检查耗时从 9.5 秒降到 1.4 秒\n· 修复：之前 raw.githubusercontent.com 排第一，国内不通时要干等 8 秒超时\n\n【重点】所有版本启动时自动检查更新\n· 启动 8 秒后自动查一次，有新版本在主界面顶部弹出提示\n· 只有用户主动在 settings.json 写 autoUpdate=false 才关闭\n\n继承全部功能：\n· 🛡 QQ 自动更新防护（锁定 runtime QQ，防止升级导致机器人失效）\n· 消息记录可存到任意文件夹（自动搬家）\n· 系统清理助手（360/鲁大师等，网盘和火绒不会被误删）\n· 系统文件修复（微软官方 sfc + DISM）\n· 入群欢迎 + 30 个小游戏菜单补全\n· 主页「AI 发送」+ 命令速查 + 插件管理\n\n重要说明：\n· NapCat 已于 2026-11-14 停止更新并删库，当前内置 v4.18.41 本地自包含\n· QQ 需保持 9.9.33（本程序会自动锁定 runtime QQ 防止被升级）",
+  "patch": {
+    "from": "1.9.7",
+    "to": "1.9.8",
+    "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.7-to-1.9.8.zip",
+    "size": 7097,
+    "sha256": "d34b227967ca2d4168490ddcae7d11746a047791137338abc2a485e4a9f2cc14",
+    "deleted": []
+  },
+  "notes": "v1.9.8\n\n【重点】更新检查全面优化 —— 无需代理即可自动升级\n· 镜像源改为国内直连优先（gh-proxy / ghfast / jsDelivr 等 7 个）\n· 检查耗时从 9.5 秒降到 1.4 秒\n· 修复：之前 raw.githubusercontent.com 排第一，国内不通时要干等 8 秒超时\n\n【重点】所有版本启动时自动检查更新\n· 启动 8 秒后自动查一次，有新版本在主界面顶部弹出提示\n· 只有用户主动在 settings.json 写 autoUpdate=false 才关闭\n\n【1.9.7 用户】点更新只需下载 6.9 KB 补丁，不用下整包\n\n继承全部功能：\n· 🛡 QQ 自动更新防护（锁定 runtime QQ，防止升级导致机器人失效）\n· 消息记录可存到任意文件夹（自动搬家）\n· 系统清理助手（360/鲁大师等，网盘和火绒不会被误删）\n· 系统文件修复（微软官方 sfc + DISM）\n· 入群欢迎 + 30 个小游戏菜单补全\n· 主页「AI 发送」+ 命令速查 + 插件管理\n\n重要说明：\n· NapCat 已于 2026-11-14 停止更新并删库，当前内置 v4.18.41 本地自包含\n· QQ 需保持 9.9.33（本程序会自动锁定 runtime QQ 防止被升级）",
   "force": false
 }
