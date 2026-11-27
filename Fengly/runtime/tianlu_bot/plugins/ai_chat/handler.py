@@ -15,7 +15,7 @@ from nonebot.exception import FinishedException, RejectedException
 from nonebot.log import logger
 from core.config import BOT_QQ, DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL, IGNORE_QQ, GROUP_IDS, is_enabled, get_game_commands, get_group_ids
 from core.http_client import get_http_client
-from core.utils import strip_mention
+from core.utils import strip_mention, is_at_bot
 from .prompt import build_prompt
 from .history import get_history, update_history
 from .cooldown import check_cooldown
@@ -41,12 +41,46 @@ _ACTION_RE = re.compile(r"[（(][^）)]*[）)]")
 
 
 def is_game_command(msg: str) -> bool:
-    # 每消息现读（开关热切换后立即生效）
+    """判断是否游戏/系统命令。
+
+    只有两种情况算：
+      1. 整句完全等于命令（如「签到」「我的信息」）
+      2. 第一个词完全等于命令，且后面是**参数**（如「猜大小 大」「买 苹果」）
+
+    历史 BUG：之前无条件取第一个词比对，聊天里碰巧以命令开头就会误判。
+    现在要求「第一个词之后的内容不能还是普通句子」——用长度和字集做约束。
+    """
     cmds = get_game_commands()
-    if msg in cmds:
+    m = (msg or "").strip().rstrip("。！？!?~～")
+    if not m:
+        return False
+
+    # 整句匹配
+    if m in cmds:
         return True
-    head = msg.split(maxsplit=1)[0] if msg else ""
-    return head in cmds
+
+    # 第一个词匹配
+    parts = m.split(maxsplit=1)
+    head = parts[0]
+    if head not in cmds:
+        return False
+
+    # 没有参数：已经是整句匹配过了，走到这说明不匹配
+    if len(parts) < 2:
+        return False
+
+    args = parts[1].strip()
+    if not args:
+        return True
+
+    # 有参数时，参数必须「短且不像一句话」：
+    # 比如「猜大小 大」「掷硬币 正」「买 苹果」→ 算
+    # 但「猜大小 我觉得今天天气不错」→ 不算，交给 AI 聊天
+    if len(args) > 8:
+        return False
+    if any(ch in args for ch in "，。！？；,;!?"):
+        return False
+    return True
 
 
 # ==================== 限制配置 ====================
@@ -398,46 +432,18 @@ async def _handle_lyrics(bot: Bot, event, user_id: str, song_name: str, group: b
 
 # ==================== 功能菜单 ====================
 _MENU_TEXT = """📋 天禄功能清单
-（记得先 @我 再说指令哦～）
 
-💬 聊天
-  @天禄 <随便说点什么>      ← AI 对话
-  @天禄 说 <内容>            ← 语音回复
-  @天禄 唱 《歌名》          ← 点歌
-  @天禄 摸头 / 运势 / 接龙 / 是谁
-
-💰 金币系统
-  @天禄 签到          ← 每天领 10~30 金币
-  @天禄 我的信息      ← 看余额
-  @天禄 商店          ← 看能买什么
-  @天禄 买 <商品> / 卖 <商品>
-  @天禄 背包 / 抽签
-
-🎮 小游戏（共 30 个，都要 @我）
-
-  🆓 免费玩：
-    抢红包 / 漂流瓶 / 天降金币
-
-  💵 便宜（2~5 金币）：
-    掷骰子 / 猜点数 / 翻牌 / 钓鱼 / 挖矿
-    砍树 / 捡垃圾 / 踩地雷 / 命运卡牌
-    打地鼠 / 幸运数字 / 拆快递
-
-  💰 中等（6~10 金币）：
-    比大小 / 老虎机 / 大转盘 / 刮刮乐
-    抓娃娃 / 俄罗斯轮盘 / 拼豹子 / 射箭
-
-  💎 高投入（15 金币以上）：
-    开宝箱 / 抽盲盒 / 十连抽
-
-  🎯 要猜的（带参数）：
-    @天禄 掷硬币 正       （正 / 反）
-    @天禄 猜左右手 左     （左 / 右）
-    @天禄 押单双 单       （单 / 双）
-    @天禄 猜大小 大       （大 = 4~6 点，小 = 1~3 点）
-
-🔧 系统
-  #help / #sysinfo / #cpu / #内存
+💬 AI 聊天：@天禄 <随便说>
+🎤 语音直读：@天禄 说 <内容>
+🎵 点歌：@天禄 唱 《歌名》
+🎵 点歌语音：@天禄 唱 《歌名》 语音
+🎵 DJ 版：@天禄 唱 《歌名》 DJ
+🔍 歌词搜歌：@天禄 唱 歌词 <一句歌词>
+📜 歌词获取：@天禄 唱 《歌名》 歌词
+🎮 游戏：商店 / 买 / 背包 / 签到 / 抽签 / 我的信息
+✨ 快捷：摸头 / 运势 / 接龙 / 是谁
+🔧 系统：#help / #sysinfo / #cpu / #内存
+🔐 私聊：设置cookie <你的网易云cookie>
 """
 
 _MENU_KEYWORDS = ("功能", "菜单", "帮助", "指令", "功能菜单")
@@ -459,14 +465,26 @@ def _extract_cookie_cmd(user_msg: str) -> str | None:
 
 # ==================== 快捷指令 ====================
 async def _handle_quick_cmd(user_id: str, user_msg: str) -> str | None:
-    if "摸头" in user_msg:
+    """快捷指令。
+
+    历史 BUG：这里原来用 `"运势" in user_msg` 这种子串匹配，
+    结果「今天运势怎么样」「你知道这是谁的吗」这种正常聊天也会被拦截，
+    机器人突然答非所问。现改为「整句等于关键词」或「关键词在最前面」才触发。
+    """
+    m = user_msg.strip()
+
+    def _hit(*kw: str) -> bool:
+        # 整句就是关键词，或者以关键词开头（允许后面跟少量补充）
+        return any(m == k or m.startswith(k) for k in kw)
+
+    if _hit("摸头", "摸摸头"):
         favor = add_favor(user_id, 3)
         return f"（耳朵竖起）哼！好感度 +3（当前{favor}）"
-    if "运势" in user_msg:
+    if _hit("运势", "今日运势"):
         return f"（掐指一算）{get_fortune(user_id)}" if is_enabled("fortune") else "（摊爪）运势功能已关闭"
-    if "接龙" in user_msg:
+    if _hit("接龙", "成语接龙"):
         return await idiom_chain(user_msg) if is_enabled("idiom") else "（摊爪）成语接龙已关闭"
-    if "是谁" in user_msg or "什么角色" in user_msg:
+    if _hit("是谁", "什么角色", "我是谁"):
         return await query_character(user_msg)
     return None
 
@@ -551,7 +569,7 @@ async def handle_ai(bot: Bot, event: GroupMessageEvent):
 
     raw_msg = event.raw_message if hasattr(event, "raw_message") else str(event.message)
 
-    if "@天禄" not in raw_msg and f"[CQ:at,qq={BOT_QQ}]" not in raw_msg:
+    if not is_at_bot(raw_msg, BOT_QQ):
         return
 
     plain = event.get_plaintext() if hasattr(event, "get_plaintext") else raw_msg
@@ -594,21 +612,9 @@ async def handle_ai(bot: Bot, event: GroupMessageEvent):
 
     # ==================== 自由聊天模式开关 ====================
     # 开（FEATURE_FREE_CHAT=1）：@ 机器人就能自由聊天
-    # 关（默认）：群里不闲聊，只响应功能命令
-    #
-    # ★ 但不闲聊≠装死：@ 我且没匹配上任何命令时，给一句引导，
-    #   否则新人完全不知道要发「菜单」两个字（这是玩家反馈最多的点）。
+    # 关（默认）：群里不闲聊，只响应上面的功能命令（菜单/语音/点歌）
+    # 想聊天请私聊（白名单内）
     if not is_enabled("free_chat"):
-        _hint_keywords = ("怎么用", "咋用", "能干嘛", "有什么功能", "咋玩", "怎么玩", "玩法")
-        if not user_msg or user_msg in _MENU_KEYWORDS or any(k in user_msg for k in _hint_keywords):
-            await ai.finish(MessageSegment.at(user_id) + _MENU_TEXT)
-            return
-        # 其他内容：简短提示，不刷屏
-        await ai.finish(
-            MessageSegment.at(user_id)
-            + f"（歪头）「{user_msg[:12]}」这个我还不会～\n"
-              "试试发「菜单」看看我会什么？也可以 @我 签到 / 掷骰子 / 运势"
-        )
         return
 
     # ==================== 普通 AI 对话（只回文字） ====================
@@ -661,7 +667,7 @@ async def handle_random_talk(bot: Bot, event: GroupMessageEvent):
         pass
     raw_msg = event.raw_message if hasattr(event, "raw_message") else str(event.message)
     # @ 过的消息交给正常对话流程，不重复插话
-    if "@天禄" in raw_msg or f"[CQ:at,qq={BOT_QQ}]" in raw_msg:
+    if is_at_bot(raw_msg, BOT_QQ):
         return
     plain = event.get_plaintext() if hasattr(event, "get_plaintext") else raw_msg
     user_msg = strip_mention(plain).strip()

@@ -1,19 +1,45 @@
 {
-  "version": "1.9.8",
-  "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/%E6%9C%BA%E5%99%A8%E4%BA%BA%E6%8E%A7%E5%88%B6%E5%8F%B0-Setup-1.9.8.exe",
-  "downloadPage": "https://4001880759.share.123pan.cn/123pan/ijXeMh-CEuc3",
+  "version": "1.9.9",
+  "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/%E6%9C%BA%E5%99%A8%E4%BA%BA%E6%8E%A7%E5%88%B6%E5%8F%B0-Setup-1.9.9.exe",
+  "downloadPage": "https://4001880759.share.123pan.cn/123pan/ijXeMh-bChe3",
   "extraDownloadPages": [
-    { "label": "安装版（.exe）", "url": "https://4001880759.share.123pan.cn/123pan/ijXeMh-CEuc3" },
-    { "label": "免安装版（.zip）", "url": "https://4001880759.share.123pan.cn/123pan/ijXeMh-t6ht3" }
+    { "label": "安装版（.exe）", "url": "https://4001880759.share.123pan.cn/123pan/ijXeMh-bChe3" },
+    { "label": "免安装版（.zip）", "url": "https://4001880759.share.123pan.cn/123pan/ijXeMh-z6ht3" }
   ],
-  "patch": {
-    "from": "1.9.7",
-    "to": "1.9.8",
-    "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.7-to-1.9.8.zip",
-    "size": 64377,
-    "sha256": "92730a4a4f8cf32432fa1bf73afadb88886ba36d3568b0802b8c0b48bfaa29e2",
-    "deleted": []
-  },
-  "notes": "v1.9.8\n\n【重要修复】更新提示现在真的会弹了\n· 修复 preload.js 中 on() 在定义前被调用，导致更新事件监听全部失效\n· 修复 initUpdater() 从未被调用，导致检查结果推送不到界面\n· 之前所有版本「不弹更新提示」的根因就是这两个 BUG\n\n【更新检查优化】\n· 镜像源改为国内直连优先（gh-proxy / ghfast / jsDelivr 等 7 个）\n· 检查耗时从 9.5 秒降到 1.4 秒\n\n【自动更新】\n· 启动 8 秒后自动检查，有新版本在主界面顶部弹出横幅\n\n【1.9.7 用户】点更新只需下载 63 KB 补丁\n\n继承全部功能：\n· 🛡 QQ 自动更新防护（锁定 runtime QQ，防止升级导致机器人失效）\n· 消息记录可存到任意文件夹（自动搬家）\n· 系统清理助手（360/鲁大师等，网盘和火绒不会被误删）\n· 系统文件修复（微软官方 sfc + DISM）\n· 入群欢迎 + 30 个小游戏菜单补全\n· 主页「AI 发送」+ 命令速查 + 插件管理\n\n重要说明：\n· NapCat 已于 2026-11-14 停止更新并删库，当前内置 v4.18.41 本地自包含\n· QQ 需保持 9.9.33（本程序会自动锁定 runtime QQ 防止被升级）",
+  "patch": [
+    {
+      "from": "1.9.5",
+      "to": "1.9.9",
+      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.5-to-1.9.9.zip",
+      "size": 134716,
+      "sha256": "17aaf158863ce7cbd1069e853aadfa770352ed943da081e7c8fbd3282147e566",
+      "deleted": []
+    },
+    {
+      "from": "1.9.6",
+      "to": "1.9.9",
+      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.6-to-1.9.9.zip",
+      "size": 112835,
+      "sha256": "806aa948f7ae0bd9dc0e163c89075fd3a88f4e9239586b6e7f4606f72f5d3de4",
+      "deleted": []
+    },
+    {
+      "from": "1.9.7",
+      "to": "1.9.9",
+      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.7-to-1.9.9.zip",
+      "size": 112835,
+      "sha256": "806aa948f7ae0bd9dc0e163c89075fd3a88f4e9239586b6e7f4606f72f5d3de4",
+      "deleted": []
+    },
+    {
+      "from": "1.9.8",
+      "to": "1.9.9",
+      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.8-to-1.9.9.zip",
+      "size": 106230,
+      "sha256": "496ef82ac8a988d99432367f00932c09775a6b7d4118605fe7d47400e711d416",
+      "deleted": []
+    }
+  ],
+  "notes": "v1.9.9\n\n【修复】机器人回复逻辑\n· 不再用昵称判断是否 @ 机器人，改看 QQ 号 —— 不管你把机器人改成什么名字都能正常响应\n· 修复正常聊天被误当成游戏命令（回你游戏结果）\n· 修复说「今天运势怎么样」被当成运势指令\n· 修复 @机器人发游戏命令后还追一句「这个我不会」\n· 修复 tools 插件在换昵称后完全不响应\n\n【新增】系统监控（系统资源页）\n· CPU / RAM / DISK / GPU / NET 五项指标\n· GPU 能正确识别独显（自动排除向日葵、ToDesk 等虚拟屏）\n· 网速显示实时上传/下载速度\n\n【新增】系统资源页\n· 之前这个页面根本没有入口，现在在左侧导航可以打开\n· 页面内加入「RobotConsole 版本」卡片，可手动检查更新\n\n【修复】更新提示\n· 修复一次点击弹两个、甚至三个提示的问题\n· 修复「关于」页和系统资源页版本号永远显示 1.0.0\n\n【增强】系统清理\n· 支持扫描绿色版 / 便携版软件（之前只扫注册表，装了很多软件却一个都扫不到）\n· 新增识别：CursorZoom、BatchRenamer、快压、Hao123 等\n· 新增「💪 深度清理」：结束进程 → 停止服务 → 卸载 → 扫描清理残留（目录/注册表/启动项/服务/计划任务）\n· 删除前自动备份，可恢复\n· 网盘、火绒、系统运行库三重保护，绝不误删\n\n【升级说明】\n· 1.9.5 ~ 1.9.8 用户点更新只需下载 100 KB 左右的补丁\n· 更早版本会下载完整安装包\n\n重要说明：\n· NapCat 已于 2026-11-14 停止更新并删库，当前内置 v4.18.41 本地自包含\n· QQ 需保持 9.9.33（本程序会自动锁定 runtime QQ 防止被升级）",
   "force": false
 }

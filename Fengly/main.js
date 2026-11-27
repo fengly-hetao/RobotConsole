@@ -68,16 +68,35 @@ const accountMod = require('./modules/account');
 const senderMod = require('./modules/sender');
 const msgmigrate = require('./modules/msgmigrate');
 const cleanupMod = require('./modules/cleanup');
+const cleanupDeep = require('./modules/cleanupdeep');
 const sysrepairMod = require('./modules/sysrepair');
 const qqguardMod = require('./modules/qqguard');
 
 const BILIBILI = 'https://space.bilibili.com/3706994888280144?spm_id_from=333.1007.0.0';
-const APP_INFO = {
-  name: '机器人控制台',
-  nameEn: 'Robot Console',
-  version: '1.0.0',
-  bilibili: BILIBILI
-};
+  // 版本号必须从 package.json 动态读取。
+  // 历史 BUG：这里原来写死 '1.0.0'，导致「关于」页和系统资源页显示的版本
+  // 永远是 1.0.0，和实际发布版本完全对不上。
+  function readAppVersion() {
+    const candidates = [
+      path.join(__dirname, 'package.json'),                         // 开发 / 免安装
+      path.join(process.resourcesPath || '', 'app', 'package.json')  // 安装版
+    ];
+    for (const p of candidates) {
+      try {
+        const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+        if (j && j.version) return String(j.version);
+      } catch (e) { /* 试下一个 */ }
+    }
+    try { const v = app.getVersion(); if (v) return String(v); } catch (e) {}
+    return '0.0.0';
+  }
+
+  const APP_INFO = {
+    name: '机器人控制台',
+    nameEn: 'Robot Console',
+    version: readAppVersion(),
+    bilibili: BILIBILI
+  };
 
 // =====================================================================
 // 文件日志：把控制台输出同时写入 %APPDATA%\robot-bot-console\logs\main-*.log
@@ -581,6 +600,36 @@ function bootstrap() {
         console.warn('[qqguard] 防护初始化异常: ' + e.message);
       }
     }
+    // ---------- 顽固软件清理（进程/服务/残留）----------
+    ipcMain.handle('cleanup:prepare', async (e, item) => {
+      try { return await cleanupDeep.prepareUninstall(item || {}); }
+      catch (err) { return { ok: false, error: err.message }; }
+    });
+
+    ipcMain.handle('cleanup:killProcs', async (e, item) => {
+      try { return { ok: true, ...(await cleanupDeep.killProcesses(item || {})) }; }
+      catch (err) { return { ok: false, error: err.message }; }
+    });
+
+    ipcMain.handle('cleanup:stopServices', async (e, item) => {
+      try { return { ok: true, ...(await cleanupDeep.stopServices(item || {})) }; }
+      catch (err) { return { ok: false, error: err.message }; }
+    });
+
+    ipcMain.handle('cleanup:scanResiduals', async (e, item) => {
+      try { return { ok: true, items: await cleanupDeep.scanResiduals(item || {}) }; }
+      catch (err) { return { ok: false, error: err.message, items: [] }; }
+    });
+
+    ipcMain.handle('cleanup:cleanResiduals', async (e, items) => {
+      try { return await cleanupDeep.cleanResiduals(items || []); }
+      catch (err) { return { ok: false, error: err.message, cleaned: [], failed: [] }; }
+    });
+
+    ipcMain.handle('cleanup:forceRemoveDir', async (e, dir) => {
+      try { return await cleanupDeep.forceRemoveDir(String(dir || '')); }
+      catch (err) { return { ok: false, error: err.message }; }
+    });
     // ---------- 系统清理助手 ----------
     ipcMain.handle('cleanup:scan', async () => {
       try { return await cleanupMod.scan(); }

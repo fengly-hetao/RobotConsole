@@ -21,6 +21,7 @@ const NAV = [
   { id: 'messages', icon: 'about' },   // 消息：聊天记录 + 语音 + 音乐
   { id: 'persona', icon: 'about' },    // 人格：名字/性格/口头禅
   { id: 'toolbox', icon: 'code' },     // 工具：配置/代码/备份/点歌
+  { id: 'resources', icon: 'home' },   // 系统资源：CPU/内存/磁盘/GPU/网络
   { id: 'settings', icon: 'settings' } // 设置：模型/网络/更新/关于
 ];
 
@@ -68,77 +69,102 @@ function showToastIfManual(st, msg) {
     if (st && st.manual) toast(msg, 'warn');
   } catch (e) {}
 }
+/* 下载更新（补丁优先，失败回退整包）。横幅和资源页共用。 */
+async function handleUpdateDownload(st, btn, hasPatch) {
+  if (btn) { btn.disabled = true; btn.textContent = t('update.downloading'); }
+  const prog = document.getElementById('update-progress');
+  if (prog) prog.classList.remove('hidden');
+
+  // ① 增量补丁
+  if (hasPatch && st.patch) {
+    try {
+      const pr = await bridge.applyPatch(st.patch);
+      if (pr && pr.ok) {
+        toast('✅ 快速更新完成（' + (pr.applied || 0) + ' 个文件），正在重启…', 'ok');
+        if (prog) prog.classList.add('hidden');
+        setTimeout(() => { try { bridge.relaunch(); } catch (e) {} }, 1500);
+        return;
+      }
+      console.warn('[update] 补丁失败，回退整包:', pr && pr.error);
+      showToastIfManual(st, '补丁更新失败（' + ((pr && pr.error) || '未知原因') + '），改用完整下载');
+    } catch (e) {
+      console.warn('[update] 补丁异常:', e);
+    }
+  }
+
+  // ② 整包
+  try {
+    const r = await bridge.downloadUpdate(st.url);
+    if (r && r.ok) {
+      toast(t('update.downloadedStart'), 'ok');
+    } else {
+      toast('❌ ' + ((r && r.error) || '下载失败'), 'err');
+      if (btn) { btn.disabled = false; btn.textContent = t('update.go'); }
+    }
+  } catch (e) {
+    toast('❌ ' + e.message, 'err');
+    if (btn) { btn.disabled = false; btn.textContent = t('update.go'); }
+  }
+}
 function initUpdater() {
   bridge.onUpdateStatus((st) => {
+    // ★ 主进程在手动检查时会先推一个 { checking: true } 的“开始检查”中间态，
+    //   随后 runUpdateCheck 完再推一次完整结果。
+    //   之前两者都进回调 → 一次点击弹两个提示（且中间态 hasUpdate 为 undefined，
+    //   被误判成「已是最新」）。这里直接忽略中间态。
+    if (st && st.checking === true) {
+      try { applyUpdateInfo({ latest: '', hasUpdate: false }); } catch (e) {}
+      return;
+    }
     state.updateInfo = st;
-    const banner = document.getElementById('update-banner');
+    // 同步渲染到「系统资源」页的版本卡片
+    try { applyUpdateInfo(st); } catch (e) {}
     // 无更新但检查出错：手动检查时告知原因（自动检查不打扰）
     if (st && !st.hasUpdate && st.error && st.manual) {
       toast('更新检查失败：' + st.error, 'err');
-      if (banner) banner.classList.add('hidden');
+      const b0 = document.getElementById('update-banner');
+      if (b0) b0.classList.add('hidden');
       return;
     }
-    if (!banner) return;
+
+    // ★ 横幅只在首页存在。用户在设置页 / 系统资源页手动检查时，
+    //   这里拿到的 banner 是 null。之前直接 return，导致：
+    //   已是最新版本时静默无提示，用户以为按钮坏了。
+    //   现在即使没有横幅，也把结果 toast 出来。
+    const banner = document.getElementById('update-banner');
+
     if (st && st.hasUpdate && st.latest) {
-      // 用户点过「稍后」的版本不再重复弹
-      if (state.dismissedVersion === st.latest) return;
-      document.getElementById('update-version').textContent = 'v' + st.latest;
-      const notesEl = document.getElementById('update-notes');
-      if (notesEl) notesEl.textContent = st.notes || '';
-      const urlOk = st.url && /^https?:\/\//i.test(st.url) && !st.url.includes('你的下载链接');
-      const goBtn = document.getElementById('btn-update-go');
-      if (goBtn) goBtn.style.display = urlOk ? '' : 'none';
-      const pageBtn = document.getElementById('btn-update-page');
-      if (pageBtn) pageBtn.style.display = urlOk ? 'none' : '';
-      // 有补丁时按钮文案提示用户「只下几 MB」
-      const hasPatch = !!(st.patch && st.patch.url && st.patch.sha256);
-      const goBtnEl = document.getElementById("btn-update-go");
-      if (goBtnEl && hasPatch) {
-        const kb = Math.max(1, Math.round((st.patch.size || 0) / 1024));
-        goBtnEl.textContent = "⚡ 快速更新（仅 " + kb + " KB）";
-      }
-      // 下载按钮绑定
-      if (goBtn && urlOk) {
-        goBtn.onclick = async () => {
-          goBtn.disabled = true;
-          goBtn.textContent = t('update.downloading');
-          const prog = document.getElementById('update-progress');
-          if (prog) prog.classList.remove('hidden');
+      // 用户点过「稍后」的版本不再重复弹横幅（但手动检查仍给提示）
+      if (state.dismissedVersion === st.latest && !st.manual) return;
 
-          // ① 先试增量补丁（几 MB），成功就不用下整包
-          if (hasPatch) {
-            try {
-              const pr = await bridge.applyPatch(st.patch);
-              if (pr && pr.ok) {
-                const n = pr.applied || 0;
-                toast("✅ 快速更新完成（" + n + " 个文件），正在重启…", "ok");
-                if (prog) prog.classList.add("hidden");
-                setTimeout(() => { try { bridge.relaunch(); } catch (e) {} }, 1500);
-                return;
-              }
-              // 补丁失败：降级到整包，不打扰用户
-              console.warn("[update] 补丁失败，回退整包:", pr && pr.error);
-              showToastIfManual(st, "补丁更新失败（" + ((pr && pr.error) || "未知原因") + "），改用完整下载");
-            } catch (e) {
-              console.warn("[update] 补丁异常:", e);
-            }
-          }
-
-          // ② 整包下载（原有流程）
-          const r = await bridge.downloadUpdate(st.url);
-          if (r && r.ok) {
-            toast(t('update.downloadedStart'), 'ok');
-          } else {
-            toast('❌ ' + ((r && r.error) || '下载失败'), 'err');
-            goBtn.disabled = false;
-            goBtn.textContent = t('update.go');
-          }
-        };
+      if (banner) {
+        document.getElementById('update-version').textContent = 'v' + st.latest;
+        const notesEl = document.getElementById('update-notes');
+        if (notesEl) notesEl.textContent = st.notes || '';
+        const urlOk = st.url && /^https?:\/\//i.test(st.url) && !st.url.includes('你的下载链接');
+        const goBtn = document.getElementById('btn-update-go');
+        if (goBtn) goBtn.style.display = urlOk ? '' : 'none';
+        const pageBtn = document.getElementById('btn-update-page');
+        if (pageBtn) pageBtn.style.display = urlOk ? 'none' : '';
+        const hasPatch = !!(st.patch && st.patch.url && st.patch.sha256);
+        if (goBtn && hasPatch) {
+          const kb = Math.max(1, Math.round((st.patch.size || 0) / 1024));
+          goBtn.textContent = "⚡ 快速更新（仅 " + kb + " KB）";
+        }
+        if (goBtn && urlOk) {
+          goBtn.onclick = async () => { await handleUpdateDownload(st, goBtn, hasPatch); };
+        }
+        if (pageBtn) pageBtn.onclick = () => bridge.openUpdatePage(st.url || 'https://www.123pan.com');
+        banner.classList.remove('hidden');
       }
-      if (pageBtn) pageBtn.onclick = () => bridge.openUpdatePage(st.url || 'https://www.123pan.com');
-      banner.classList.remove('hidden');
-      toast('🎉 ' + t('update.found') + ' v' + st.latest, 'ok');
-    } else if (st && st.checking === false && st.manual) {
+
+      // 手动检查时一定给提示（不管横幅在不在）
+      if (st.manual) {
+        toast('🎉 ' + t('update.found') + ' v' + st.latest, 'ok');
+      }
+    } else if (st && st.manual) {
+      // 已是最新
+      if (banner) banner.classList.add('hidden');
       toast(t('update.none'), 'ok');
     }
   });
@@ -289,6 +315,7 @@ const PAGE_RENDERERS = {
   webui: () => renderWebui(),
   messages: () => renderMessages(),
   toolbox: () => renderToolbox(),
+  resources: () => renderResources(),
   plugins: () => renderPlugins(),
   persona: () => renderPersona(),
   settings: () => renderSettings()
@@ -976,9 +1003,26 @@ async function renderResources() {
   if (!state.sysinfo) state.sysinfo = await bridge.sysInfo();
   const el = document.getElementById('page-resources');
   if (!el.dataset.ready) {
-    el.innerHTML = `      <div class="grid grid-4" id="res-metrics"></div>
+    el.innerHTML = `      <div class="grid" id="res-metrics" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px"></div>
       <div class="grid grid-2" style="margin-top:16px">
         <div class="card" style="margin-bottom:14px">
+        <div class="card" style="margin-bottom:14px">
+          <h3>🤖 <span>RobotConsole 版本</span></h3>
+          <p class="hint">检查控制台自身是否有新版本。有新版本时会在主界面顶部弹出提示，也可以在这里手动检查。</p>
+          <div id="rc-version-info" style="margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--bg-2);font-size:13px">
+            <div style="display:flex;justify-content:space-between;margin-bottom:3px"><span>当前版本</span><b id="rc-cur-ver">—</b></div>
+            <div style="display:flex;justify-content:space-between"><span>最新版本</span><b id="rc-latest-ver">未检查</b></div>
+          </div>
+          <div class="btn-row" style="margin-top:10px">
+            <button class="btn sm primary" id="btn-rc-check">🔄 检查更新</button>
+            <button class="btn sm" id="btn-rc-download" style="display:none">⬇ 下载更新</button>
+          </div>
+          <div id="rc-update-progress" style="display:none;margin-top:10px">
+            <div class="gauge" style="height:6px"><div id="rc-progress-bar" style="width:0%"></div></div>
+            <div id="rc-progress-text" style="font-size:12px;opacity:.75;margin-top:5px"></div>
+          </div>
+          <div id="rc-update-notes" style="display:none;margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--bg-3);font-size:12px;white-space:pre-wrap;max-height:160px;overflow-y:auto"></div>
+        </div>
           <h3>🐧 <span>QQ 版本与更新</span></h3>
           <p class="hint">检查本地 QQ 版本是否需要更新。NapCat 需要特定 QQ 版本，版本不匹配会导致扫码失败或启动不了。</p>
           <div id="qq-version-info" style="margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--bg-2);font-size:13px">
@@ -996,23 +1040,108 @@ async function renderResources() {
     el.dataset.ready = '1';
   }
   updateResources();
+  initRcUpdateCheck();
 }
 function updateResources(d) {
   if (!document.getElementById('res-metrics')) return;
   if (d) state.sysinfo = d;
   const s = state.sysinfo;
   if (!s) return;
-  document.getElementById('res-metrics').innerHTML = `
-    <div class="card metric"><span class="m-label">${t('resources.cpu')}</span><span class="m-value">${s.cpu.usage.toFixed(0)}%</span><div class="gauge"><div style="width:${s.cpu.usage}%"></div></div><span class="m-sub">${esc(s.cpu.model)} · ${s.cpu.cores} ${t('resources.cores')}</span></div>
-    <div class="card metric"><span class="m-label">${t('resources.memory')}</span><span class="m-value">${s.memory.usage.toFixed(0)}%</span><div class="gauge"><div style="width:${s.memory.usage}%"></div></div><span class="m-sub">${fmtBytes(s.memory.used)} / ${fmtBytes(s.memory.total)}</span></div>
-    <div class="card metric"><span class="m-label">${t('resources.disk')}</span><span class="m-value">${s.disk.usage.toFixed(0)}%</span><div class="gauge"><div style="width:${s.disk.usage}%"></div></div><span class="m-sub">${fmtBytes(s.disk.free)} free / ${fmtBytes(s.disk.total)}</span></div>
-    <div class="card metric"><span class="m-label">${t('resources.network')}</span><span class="m-value">${fmtBytes(s.network.rx + s.network.tx)}</span><div class="gauge"><div style="width:40%"></div></div><span class="m-sub">${t('resources.rx')} ${fmtBytes(s.network.rx)} · ${t('resources.tx')} ${fmtBytes(s.network.tx)}</span></div>`;
+    document.getElementById('res-metrics').innerHTML = `
+      <div class="card metric"><span class="m-label">CPU</span><span class="m-value">${s.cpu.usage.toFixed(0)}%</span><div class="gauge"><div style="width:${s.cpu.usage}%"></div></div><span class="m-sub">${esc(s.cpu.model)} · ${s.cpu.cores} 核</span></div>
+      <div class="card metric"><span class="m-label">RAM</span><span class="m-value">${s.memory.usage.toFixed(0)}%</span><div class="gauge"><div style="width:${s.memory.usage}%"></div></div><span class="m-sub">${fmtBytes(s.memory.used)} / ${fmtBytes(s.memory.total)}</span></div>
+      <div class="card metric"><span class="m-label">DISK</span><span class="m-value">${s.disk.usage.toFixed(0)}%</span><div class="gauge"><div style="width:${s.disk.usage}%"></div></div><span class="m-sub">${fmtBytes(s.disk.free)} 可用 / ${fmtBytes(s.disk.total)}</span></div>
+      <div class="card metric"><span class="m-label">GPU</span><span class="m-value">${s.gpu && s.gpu.usage >= 0 ? s.gpu.usage.toFixed(0) + '%' : (s.gpu && s.gpu.name ? '已识别' : '—')}</span><div class="gauge"><div style="width:${s.gpu && s.gpu.usage >= 0 ? s.gpu.usage : 0}%"></div></div><span class="m-sub" title="${esc((s.gpu && s.gpu.name) || '')}">${esc(((s.gpu && s.gpu.name) || '未检测到显卡').slice(0, 32))}${s.gpu && s.gpu.vramTotal ? ' · ' + fmtBytes(s.gpu.vramTotal) : ''}</span></div>
+      <div class="card metric"><span class="m-label">NET</span><span class="m-value">${fmtBytes((s.network.rxSpeed || 0) + (s.network.txSpeed || 0))}/s</span><div class="gauge"><div style="width:${Math.min(100, ((s.network.rxSpeed || 0) + (s.network.txSpeed || 0)) / 1048576 * 10)}%"></div></div><span class="m-sub">↓ ${fmtBytes(s.network.rxSpeed || 0)}/s · ↑ ${fmtBytes(s.network.txSpeed || 0)}/s（累计 ↓${fmtBytes(s.network.rx)} ↑${fmtBytes(s.network.tx)}）</span></div>`;
   document.getElementById('res-os').innerHTML = `
     <tr><th>${t('resources.os')}</th><td>${esc(s.os.platform)} ${esc(s.os.release)}</td></tr>
     <tr><th>${t('resources.hostname')}</th><td>${esc(s.os.hostname)}</td></tr>
     <tr><th>${t('resources.uptime')}</th><td>${fmtUptime(s.os.uptime)}</td></tr>
     <tr><th>CPU</th><td>${esc(s.cpu.model)}</td></tr>`;
   document.getElementById('res-net').innerHTML = s.interfaces.map(i => `<tr><th>${esc(i.name)}</th><td>${esc(i.address)}</td></tr>`).join('') || `<tr><td>${t('common.none')}</td></tr>`;
+}
+
+/* ============ 系统资源页 · RobotConsole 更新检查 ============ */
+let _rcUpdateState = { latest: '', url: '', notes: '', checking: false, hasUpdate: false };
+
+/* 把更新状态渲染到「系统资源」页的版本卡片。
+   由 initUpdater 的 onUpdateStatus 回调调用（全局只订阅一次，避免重复弹窗）。 */
+function applyUpdateInfo(st) {
+  const latestEl = document.getElementById('rc-latest-ver');
+  if (!latestEl) return;   // 页面还没渲染
+
+  const has = !!(st && st.hasUpdate);
+  latestEl.textContent = (st && st.latest)
+    ? ('v' + st.latest + (has ? '（有新版本）' : '（已是最新）'))
+    : '检查失败';
+
+  const dlBtn = document.getElementById('btn-rc-download');
+  if (dlBtn) dlBtn.style.display = (has && st.url) ? '' : 'none';
+
+  const notesEl = document.getElementById('rc-update-notes');
+  if (notesEl) {
+    if (has && st.notes) { notesEl.textContent = st.notes; notesEl.style.display = ''; }
+    else { notesEl.style.display = 'none'; }
+  }
+}
+function initRcUpdateCheck() {
+  const curEl = document.getElementById('rc-cur-ver');
+  const latestEl = document.getElementById('rc-latest-ver');
+  const checkBtn = document.getElementById('btn-rc-check');
+  const dlBtn = document.getElementById('btn-rc-download');
+  const prog = document.getElementById('rc-update-progress');
+  const progBar = document.getElementById('rc-progress-bar');
+  const progText = document.getElementById('rc-progress-text');
+  const notesEl = document.getElementById('rc-update-notes');
+
+  // 当前版本
+  if (curEl && state.appInfo) {
+    curEl.textContent = 'v' + (state.appInfo.version || '?');
+  }
+
+
+  // 已有结果直接显示
+  if (state.updateInfo) applyUpdateInfo(state.updateInfo);
+
+  if (checkBtn) {
+    checkBtn.onclick = async () => {
+      if (checkBtn.disabled) return;
+      checkBtn.disabled = true;
+      checkBtn.textContent = '检查中…';
+      if (latestEl) latestEl.textContent = '检查中…';
+      try {
+        // 只调用，不弹 toast —— 结果会通过 onUpdateStatus 推回来，由 initUpdater 统一提示
+        await bridge.checkUpdate();
+      } catch (e) {
+        if (latestEl) latestEl.textContent = '检查失败';
+      } finally {
+        checkBtn.disabled = false;
+        checkBtn.textContent = '🔄 检查更新';
+      }
+    };
+  }
+
+  if (dlBtn) {
+    dlBtn.onclick = async () => {
+      const url = (state.updateInfo && state.updateInfo.url) || '';
+      if (!url) return;
+      if (dlBtn.disabled) return;
+      dlBtn.disabled = true;
+      dlBtn.textContent = '下载中…';
+      if (prog) prog.style.display = '';
+      try {
+        await bridge.downloadUpdate(url);
+      } catch (e) {
+        if (progText) progText.textContent = '下载失败：' + e.message;
+      }
+      dlBtn.disabled = false;
+      dlBtn.textContent = '⬇ 下载更新';
+    };
+  }
+
+  // 进度与状态由 initUpdater 全局订阅一次（第 73/147 行），
+  // 这里不再重复注册，否则同一事件会触发两次 → 弹两个 toast。
+  // 本页只在 renderResources 时把已有状态画出来。
 }
 
 /* ============ 设置 ============ */
@@ -1498,11 +1627,10 @@ async function renderSettings() {
       updateUrl: document.getElementById('set-update-url').value.trim(),
       updateGroupId: document.getElementById('set-update-group').value.trim()
     });
+    // 只提示「正在检查」，结果由 initUpdater 的全局 onUpdateStatus 回调统一提示。
+    // 历史 BUG：这里又自己 toast 一次结果，加上全局回调 = 一次点击弹 2~3 个提示。
     toast(t('update.checking'));
-    const r = await bridge.checkUpdate();
-    if (r && r.hasUpdate) toast(t('update.found') + ' v' + r.latest + (r.source === 'qqgroup' ? '（来自群文件）' : ''), 'ok');
-    else if (r && r.error) toast(t('update.fail') + r.error, 'err');
-    else toast(t('update.none'), 'ok');
+    await bridge.checkUpdate();
   };
 
   const saveGen = async () => {
@@ -2511,6 +2639,113 @@ async function initToolboxCode() {
   }
 }
 /* ============ 工具箱 · 系统清理 ============ */
+
+/* ============ 残留扫描结果对话框 ============ */
+function showResidualsDialog(item, residuals) {
+  // 移除旧对话框
+  const old = document.getElementById('residual-dialog');
+  if (old) old.remove();
+
+  if (!residuals.length) {
+    toast('「' + item.name + '」没有发现残留 ✅', 'ok');
+    return;
+  }
+
+  const totalSize = residuals.reduce((a, r) => a + (r.size || 0), 0);
+  const typeLabel = {
+    dir: '📁 目录', regkey: '📋 注册表', startup: '🚀 启动项',
+    service: '⚙️ 服务', task: '⏰ 计划任务'
+  };
+
+  const ov = document.createElement('div');
+  ov.id = 'residual-dialog';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+
+  const box = document.createElement('div');
+  box.className = 'card';
+  box.style.cssText = 'width:min(720px,96vw);max-height:86vh;overflow-y:auto;background:var(--bg-1)';
+
+  let html = '';
+  html += '<h3>🧹 「' + esc(item.name) + '」残留清理</h3>';
+  html += '<p class="hint">发现 ' + residuals.length + ' 项残留' +
+          (totalSize ? '，共 ' + fmtBytes(totalSize) : '') +
+          '。删除前会自动备份到 <code>%APPDATA%\\robot-bot-console\\residual-backup</code>，可恢复。</p>';
+
+  html += '<div style="margin-top:12px">';
+  html += '<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-weight:600;cursor:pointer">' +
+          '<input type="checkbox" id="residual-all" checked> 全选</label>';
+
+  residuals.forEach((r, i) => {
+    const disabled = r.risky ? '' : '';
+    html += '<label style="display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer">' +
+            '<input type="checkbox" class="residual-cb" data-idx="' + i + '" checked ' + disabled + ' style="margin-top:3px">' +
+            '<span style="flex:1;min-width:0">' +
+              '<span style="font-size:12px;opacity:.7">' + (typeLabel[r.type] || r.type) + '</span> ' +
+              '<b>' + esc(r.label) + '</b>' +
+              (r.size ? ' <span style="opacity:.6">(' + fmtBytes(r.size) + ')</span>' : '') +
+              '<div style="font-size:11.5px;opacity:.65;word-break:break-all;margin-top:2px">' + esc(r.detail || r.path) + '</div>' +
+            '</span>' +
+            '</label>';
+  });
+  html += '</div>';
+
+  html += '<div class="btn-row" style="margin-top:16px">' +
+          '<button class="btn primary" id="residual-clean">🧹 清理勾选项</button>' +
+          '<button class="btn" id="residual-cancel">关闭</button>' +
+          '</div>';
+  html += '<div id="residual-result" style="margin-top:10px;font-size:12.5px"></div>';
+
+  box.innerHTML = html;
+  ov.appendChild(box);
+  document.body.appendChild(ov);
+
+  // 全选
+  const allCb = box.querySelector('#residual-all');
+  const cbs = box.querySelectorAll('.residual-cb');
+  if (allCb) {
+    allCb.onchange = () => cbs.forEach((c) => { c.checked = allCb.checked; });
+  }
+  cbs.forEach((c) => {
+    c.onchange = () => {
+      const allChecked = Array.from(cbs).every((x) => x.checked);
+      if (allCb) allCb.checked = allChecked;
+    };
+  });
+
+  // 关闭
+  box.querySelector('#residual-cancel').onclick = () => ov.remove();
+  ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+
+  // 清理
+  box.querySelector('#residual-clean').onclick = async () => {
+    const selected = [];
+    cbs.forEach((c) => {
+      if (c.checked) selected.push(residuals[parseInt(c.dataset.idx, 10)]);
+    });
+    if (!selected.length) { toast('没有勾选任何项', 'warn'); return; }
+    if (!confirm('将删除 ' + selected.length + ' 项残留。\n\n目录会移到备份区（可恢复），注册表/启动项/服务/计划任务会直接删除。\n\n继续？')) return;
+
+    const btn = box.querySelector('#residual-clean');
+    btn.disabled = true;
+    btn.textContent = '清理中…';
+
+    const r = await bridge.cleanupCleanResiduals(selected);
+    btn.disabled = false;
+    btn.textContent = '🧹 清理勾选项';
+
+    const resEl = box.querySelector('#residual-result');
+    if (r && r.ok) {
+      resEl.innerHTML = '<div style="color:var(--ok,#6fdd8f)">✅ 已清理 ' + (r.cleaned || []).length + ' 项</div>' +
+        (r.backupDir ? '<div style="opacity:.6;margin-top:4px">备份位置：' + esc(r.backupDir) + '</div>' : '');
+      toast('清理完成', 'ok');
+    } else {
+      const fails = (r && r.failed) || [];
+      resEl.innerHTML = '<div style="color:var(--err)">⚠️ 部分失败：</div>' +
+        fails.map((f) => '<div style="opacity:.75;margin-top:3px">· ' + esc(f.item && f.item.detail || '') + '：' + esc(f.error) + '</div>').join('');
+      toast('部分项清理失败', 'warn');
+    }
+  };
+}
 async function initToolboxCleanup() {
   const scanBtn = document.getElementById('cleanup-scan');
   const hrBtn = document.getElementById('cleanup-huorong');
@@ -2555,7 +2790,8 @@ async function initToolboxCleanup() {
               '</div>' +
               '<div class="btn-row" style="margin:0;flex-shrink:0">' +
                 '<button class="btn sm" data-open="' + esc(it.name) + '">📂 目录</button>' +
-                '<button class="btn sm danger" data-uninst="' + esc(it.name) + '">🗑 卸载</button>' +
+                '<button class="btn sm" data-deep="' + esc(it.name) + '" title="结束进程→停服务→卸载→清残留">💪 深度清理</button>' +
+                  '<button class="btn sm danger" data-uninst="' + esc(it.name) + '">🗑 卸载</button>' +
               '</div>' +
             '</div>';
           }).join('') +
@@ -2603,6 +2839,64 @@ async function initToolboxCleanup() {
           }
           btn.disabled = false;
           btn.textContent = '🗑 卸载';
+        };
+      });
+
+      // ===== 深度清理 =====
+      listBox.querySelectorAll('[data-deep]').forEach((btn) => {
+        btn.onclick = async () => {
+          const name = btn.dataset.deep;
+          const it = targets.find((x) => x.name === name);
+          if (!it) return;
+
+          const ok = confirm(
+            '即将对「' + name + '」执行深度清理：\n\n' +
+            '① 结束它的所有进程\n' +
+            '② 停止并禁用它的系统服务\n' +
+            '③ 调出它自己的卸载程序（你去点确认）\n' +
+            '④ 扫描残留（目录/注册表/启动项/服务/计划任务）\n\n' +
+            '⚠️ 停止服务需要管理员权限，没有权限时会跳过\n\n' +
+            '继续？'
+          );
+          if (!ok) return;
+
+          btn.disabled = true;
+          btn.textContent = '准备中…';
+
+          // ①② 结束进程 + 停服务
+          const prep = await bridge.cleanupPrepare(it);
+          const killed = prep && prep.killed ? prep.killed.length : 0;
+          const svcStopped = prep && prep.servicesStopped ? prep.servicesStopped.length : 0;
+          let msg = '已结束 ' + killed + ' 个进程';
+          if (svcStopped) msg += '，停了 ' + svcStopped + ' 个服务';
+          if (prep && prep.needAdmin) msg += '（部分服务需要管理员权限）';
+          toast(msg, 'ok');
+
+          // ③ 启动卸载程序
+          if (it.uninstallString) {
+            btn.textContent = '启动卸载…';
+            const ur = await bridge.cleanupUninstall(it);
+            if (ur && ur.ok) {
+              toast('卸载程序已启动，请在它的窗口里点确认', 'ok');
+            } else {
+              toast('卸载程序启动失败：' + ((ur && ur.error) || ''), 'err');
+            }
+          } else {
+            toast('这个软件没有卸载程序（绿色版），可直接用「强制删除」', 'warn');
+          }
+
+          // ④ 扫描残留
+          btn.textContent = '扫描残留…';
+          await new Promise((r) => setTimeout(r, 1500));
+          const rr = await bridge.cleanupScanResiduals(it);
+          btn.disabled = false;
+          btn.textContent = '💪 深度清理';
+
+          if (rr && rr.ok) {
+            showResidualsDialog(it, rr.items || []);
+          } else {
+            toast('残留扫描失败：' + ((rr && rr.error) || ''), 'err');
+          }
         };
       });
 

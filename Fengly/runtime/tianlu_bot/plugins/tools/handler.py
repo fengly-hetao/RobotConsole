@@ -23,7 +23,7 @@ from nonebot.exception import FinishedException, RejectedException
 from nonebot.log import logger
 
 from core.config import BOT_QQ, IGNORE_QQ, is_enabled, get_group_ids
-from core.utils import strip_mention
+from core.utils import strip_mention, is_at_bot
 
 tools = on_message(priority=6, block=False)
 
@@ -118,7 +118,7 @@ async def handle_tools(bot: Bot, event: GroupMessageEvent):
 
     raw_msg = event.raw_message if hasattr(event, "raw_message") else str(event.message)
     # 与 games 一致：必须 @机器人
-    if "@天禄" not in raw_msg and f"[CQ:at,qq={BOT_QQ}]" not in raw_msg:
+    if not is_at_bot(raw_msg, BOT_QQ):
         return
 
     plain = event.get_plaintext() if hasattr(event, "get_plaintext") else raw_msg

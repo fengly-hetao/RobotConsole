@@ -64,23 +64,41 @@ function snapshotAppDir(appDir, version) {
     return dest;
   }
   fs.mkdirSync(dest, { recursive: true });
-  const EXCLUDE = ['node_modules', 'dist', 'runtime', '.git'];
-  copyTree(appDir, dest, EXCLUDE);
+const EXCLUDE = ['node_modules', 'dist', '.git'];
+// runtime 下只排除第三方二进制，Python 插件必须进补丁
+const RUNTIME_HEAVY = ['qq', 'napcat', 'tools', 'win64', 'backups', 'napcat-versions'];
+  copyTree(appDir, dest, EXCLUDE, "");
   console.log('已保存快照: ' + dest);
   return dest;
 }
 
-function copyTree(src, dst, exclude) {
+// relPrefix: 相对 appDir 的路径前缀，用于识别 runtime 下的重型子目录
+function copyTree(src, dst, exclude, relPrefix) {
   let entries = [];
   try { entries = fs.readdirSync(src, { withFileTypes: true }); } catch (e) { return; }
   for (const e of entries) {
-    if (exclude && exclude.includes(e.name)) continue;
+    const rel = relPrefix ? (relPrefix + "/" + e.name) : e.name;
+
+    // 顶层排除：node_modules / dist / .git
+    if (relPrefix === "" && exclude && exclude.includes(e.name)) continue;
+
+    // runtime 顶部只排除第三方二进制
+    if (rel === "runtime/qq" || rel === "runtime/napcat" || rel === "runtime/tools" ||
+        rel === "runtime/win64" || rel === "runtime/backups" || rel === "runtime/napcat-versions") {
+      continue;
+    }
+
+    // Python 缓存 / 运行时数据不进补丁
+    if (e.isDirectory() && (e.name === "__pycache__" || e.name === ".cache")) continue;
+
     const s = path.join(src, e.name);
     const d = path.join(dst, e.name);
     if (e.isDirectory()) {
       fs.mkdirSync(d, { recursive: true });
-      copyTree(s, d, null);
+      copyTree(s, d, exclude, rel);
     } else if (e.isFile()) {
+      if (/\.pyc$/i.test(e.name)) continue;
+      if (e.name === ".env" || e.name.startsWith(".env.")) continue;
       fs.copyFileSync(s, d);
     }
   }

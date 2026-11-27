@@ -6,7 +6,7 @@ from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageSegment
 from nonebot.exception import FinishedException, RejectedException
 from nonebot.log import logger
 from core.config import BOT_QQ, IGNORE_QQ, GROUP_IDS, is_enabled, get_group_ids
-from core.utils import strip_mention
+from core.utils import strip_mention, is_at_bot
 from .shop import get_shop, buy_item, sell_item
 from .inventory import get_inventory
 from .user import get_user_data, add_exp, add_coin, save_user_data
@@ -34,7 +34,7 @@ async def handle_games(bot: Bot, event: GroupMessageEvent):
         return
     raw_msg = event.raw_message if hasattr(event, "raw_message") else str(event.message)
 
-    if "@天禄" not in raw_msg and f"[CQ:at,qq={BOT_QQ}]" not in raw_msg:
+    if not is_at_bot(raw_msg, BOT_QQ):
         return
 
     plain = event.get_plaintext() if hasattr(event, "get_plaintext") else raw_msg

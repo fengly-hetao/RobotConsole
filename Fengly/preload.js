@@ -119,6 +119,12 @@ contextBridge.exposeInMainWorld('api', {
   cleanupUninstall: (item) => invoke('cleanup:uninstall', item),
   cleanupOpenDir: (item) => invoke('cleanup:openDir', item),
   cleanupOpenHuorong: () => invoke('cleanup:openHuorong'),
+  cleanupPrepare: (item) => invoke('cleanup:prepare', item),
+  cleanupKillProcs: (item) => invoke('cleanup:killProcs', item),
+  cleanupStopServices: (item) => invoke('cleanup:stopServices', item),
+  cleanupScanResiduals: (item) => invoke('cleanup:scanResiduals', item),
+  cleanupCleanResiduals: (items) => invoke('cleanup:cleanResiduals', items),
+  cleanupForceRemoveDir: (dir) => invoke('cleanup:forceRemoveDir', dir),
 
   // 系统文件修复
   sysrepairInfo: () => invoke('sysrepair:info'),
