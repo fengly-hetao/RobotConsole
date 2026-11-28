@@ -13,7 +13,7 @@ from nonebot.adapters.onebot.v11 import (
 )
 from nonebot.exception import FinishedException, RejectedException
 from nonebot.log import logger
-from core.config import BOT_QQ, DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL, IGNORE_QQ, GROUP_IDS, is_enabled, get_game_commands, get_group_ids
+from core.config import BOT_QQ, DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL, IGNORE_QQ, GROUP_IDS, is_enabled, get_game_commands, get_group_ids, ai_get_bool
 from core.http_client import get_http_client
 from core.utils import strip_mention, is_at_bot
 from .prompt import build_prompt
@@ -185,15 +185,29 @@ async def _stream_reply(bot: Bot, event, user_id: str, user_msg: str, group: boo
     sent_any = False
 
     # ---- 分段策略 ----
-    # 以前：每遇到一个 。！？ 就立即发一条 → 长回复被拆成 4~6 条刷屏。
-    # 现在：先把整段回复收完，再按「目标条数/单条长度」合并，最多发 MAX_PARTS 条。
-    MAX_PARTS = 2          # 最多拆成几条
-    TARGET_TOTAL = 300     # 一条消息大约多少字（总长控制）
-    MAX_SINGLE = 420       # 单条上限（超过必须再拆）
-
-    # 保活：随机延迟 0.5~2s，模拟真人回复节奏，降低被风控概率
+    # 双模式：由 HUMAN_MODE 控制（设置页可切换，.env 里 FEATURE_HUMAN_MODE）
+    #   真人模式（开）：按句发，每句一条，最多 5 条，条间停顿短 → 像真人一句句说
+    #   普通模式（关）：合并成 3~6 条，每条约 40~60 字 → 消息少但每条完整
     try:
-        await asyncio.sleep(random.uniform(0.5, 2.0))
+        _human = ai_get_bool("FEATURE_HUMAN_MODE", True)
+    except Exception:
+        _human = True
+    HUMAN_MODE = bool(_human)
+
+    if HUMAN_MODE:
+        MAX_PARTS = 5          # 最多 5 条
+        MIN_CHUNK = 10         # 少于 10 字合并
+        MAX_SINGLE = 70        # 单条上限
+        GAP_MIN, GAP_MAX = 0.25, 0.6
+    else:
+        MAX_PARTS = 6          # 最多 6 条
+        MIN_CHUNK = 40         # 每条约 40 字起
+        MAX_SINGLE = 60        # 每条约 40~60 字
+        GAP_MIN, GAP_MAX = 0.6, 1.2
+
+    # 保活：随机延迟，模拟真人回复节奏，降低被风控概率
+    try:
+        await asyncio.sleep(random.uniform(0.1, 0.4))
     except Exception:
         pass
 
@@ -213,27 +227,67 @@ async def _stream_reply(bot: Bot, event, user_id: str, user_msg: str, group: boo
         else:
             # ② 按标点切成句子
             import re as _re
-            _sentences = _re.split(r"(?<=[。！？!?…])", full_reply)
-            _sentences = [s for s in _sentences if s.strip()]
+            _sentences = _re.split(r"(?<=[。！？!?…~～])", full_reply)
+            _sentences = [s.strip() for s in _sentences if s.strip()]
 
-            # ③ 合并成最多 MAX_PARTS 段，每段尽量不超过 MAX_SINGLE
-            parts: list[str] = []
-            cur = ""
-            for s in _sentences:
-                # 超过单条上限就开新段
-                if cur and len(cur) + len(s) > MAX_SINGLE:
-                    parts.append(cur)
-                    cur = s
-                else:
+            if HUMAN_MODE:
+                # === 真人模式：每句一条（短句合并），最多 5 条 ===
+                raw: list[str] = []
+                cur = ""
+                for s in _sentences:
                     cur += s
-            if cur:
-                parts.append(cur)
+                    if len(cur) >= MIN_CHUNK:
+                        raw.append(cur)
+                        cur = ""
+                if cur:
+                    if raw:
+                        raw[-1] += cur
+                    else:
+                        raw.append(cur)
+            else:
+                # === 普通模式：每条 40~60 字 ===
+                raw = []
+                cur = ""
+                for s in _sentences:
+                    if not cur:
+                        cur = s
+                        continue
+                    if len(cur) + len(s) > MAX_SINGLE:
+                        raw.append(cur)
+                        cur = s
+                    else:
+                        cur += s
+                        if len(cur) >= MIN_CHUNK:
+                            raw.append(cur)
+                            cur = ""
+                if cur:
+                    if raw and len(raw[-1]) + len(cur) <= MAX_SINGLE:
+                        raw[-1] += cur
+                    else:
+                        raw.append(cur)
 
-            # 仍超过 MAX_PARTS 段的话，把后面的强行拼进最后一段（保证不刷屏）
-            if len(parts) > MAX_PARTS:
-                head = parts[:MAX_PARTS - 1]
-                tail = "".join(parts[MAX_PARTS - 1:])
-                parts = head + [tail]
+            # ③ 超过 MAX_PARTS 时：把全部内容重新均分到 MAX_PARTS 份（不是全塞最后一条）
+            if len(raw) > MAX_PARTS:
+                _all = "".join(raw)
+                _s2 = [s.strip() for s in _re.split(r"(?<=[。！？!?…~～])", _all) if s.strip()]
+                _n = min(MAX_PARTS, len(_s2))
+                _per = max(1, (len(_all) + _n - 1) // _n)
+                _per = min(_per, MAX_SINGLE)
+                raw = []
+                cur = ""
+                for s in _s2:
+                    if cur and (len(cur) + len(s) > _per) and len(raw) < _n - 1:
+                        raw.append(cur)
+                        cur = s
+                    else:
+                        cur += s
+                if cur:
+                    raw.append(cur)
+                while len(raw) > MAX_PARTS:
+                    raw[-2] += raw[-1]
+                    raw.pop()
+
+            parts = raw
 
             # ④ 发送
             for idx, p in enumerate(parts):
@@ -244,9 +298,8 @@ async def _stream_reply(bot: Bot, event, user_id: str, user_msg: str, group: boo
                     await bot.send(event, at_prefix + p)
                     sent_any = True
                 else:
-                    # 多条之间稍作停顿，看起来像真人一句句说
                     try:
-                        await asyncio.sleep(random.uniform(0.4, 1.0))
+                        await asyncio.sleep(random.uniform(GAP_MIN, GAP_MAX))
                     except Exception:
                         pass
                     await bot.send(event, p)

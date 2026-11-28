@@ -1805,6 +1805,7 @@ async function renderFeatureSwitches(containerId) {
     { g: 'admin', key: 'FEATURE_AUTO_REBOOT', label: t('features.autoReboot'), need: '' },
     { g: 'interact', key: 'FEATURE_POKE', label: t('features.poke'), need: '' },
     { g: 'chat', key: 'FEATURE_FREE_CHAT', label: t('features.freeChat') || '自由聊天', need: '' },
+    { g: 'chat', key: 'FEATURE_HUMAN_MODE', label: '真人说话模式（按句发，最多5条）', need: '' },
     { g: 'chat', key: 'FEATURE_RANDOM_TALK', label: t('features.randomTalk') || '随机搭话', need: '' }
   ];
   const GROUPS = [['chat', t('features.group.chat')], ['game', t('features.group.game')], ['media', t('features.group.media')], ['admin', t('features.group.admin')], ['interact', t('features.group.interact')]];
