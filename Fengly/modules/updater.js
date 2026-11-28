@@ -93,23 +93,21 @@ function expandFeedTargets(feedUrl) {
     for (const br of branches) {
       const p = 'update.json';
       const rawUrl = `https://raw.githubusercontent.com/${user}/${repo}/${br}/${p}`;
-        // ★ 顺序很重要：国内直连优先，GitHub 官方放最后。
-        //   之前把 raw.githubusercontent.com 放第一个，国内不通时要干等 8 秒超时，
-        //   用户体感就是「卡住 / 没反应」。
-        // ★ 顺序按实测速度排（无代理直连，2026-11 实测）：
-        //   gh-proxy.com 1.8s < ghfast.top 1.9s < fastly.jsdelivr 2.0s
-        //   < gcore.jsdelivr 2.8s < cdn.jsdelivr 5.9s < ghproxy.net 9.2s
-        //   已剔除失效源：ghproxy.cc / mirror.ghproxy / github.moeyy
-        //   raw.githubusercontent.com 国内基本不通，放最后兜底。
-        out.push(
-          `https://gh-proxy.com/${rawUrl}`,
-          `https://ghfast.top/${rawUrl}`,
-          `https://fastly.jsdelivr.net/gh/${user}/${repo}@${br}/${p}`,
-          `https://gcore.jsdelivr.net/gh/${user}/${repo}@${br}/${p}`,
-          `https://cdn.jsdelivr.net/gh/${user}/${repo}@${br}/${p}`,
-          `https://ghproxy.net/${rawUrl}`,
-          rawUrl
-        );
+      // ★ 顺序原则（2026-11 重新排序）：
+      //   1. gh-proxy.com 排第一 —— 国内实测最快（1.8s），且是实时代理不改内容
+      //   2. ghfast.top 第二
+      //   3. raw.githubusercontent.com 第三 —— 实时但国内常被墙（8 秒超时）
+      //   4. jsdelivr 系列放最后 —— 缓存 3~12 小时，可能给旧版本，
+      //      只在前面全挂时兜底（checkUpdate 里有「旧版本跳过」保护）
+      //   每个地址都带 ?t=<时间戳> 做 cache-busting。
+      const bust = '?t=' + Date.now();
+      out.push(
+        `https://gh-proxy.com/${rawUrl}${bust}`,
+        `https://ghfast.top/${rawUrl}${bust}`,
+        rawUrl + bust,
+        `https://fastly.jsdelivr.net/gh/${user}/${repo}@${br}/${p}${bust}`,
+        `https://cdn.jsdelivr.net/gh/${user}/${repo}@${br}/${p}${bust}`
+      );
     }
     return out;
   }
@@ -147,14 +145,45 @@ async function checkUpdate(feedUrl, currentVersion) {
   const targets = expandFeedTargets(feedUrl);
   if (!targets.length) return { hasUpdate: false, disabled: true };
 
-  const got = await fetchFirstOk(targets);
-  if (!got.ok) {
-    return { hasUpdate: false, error: '所有更新源都连不上（' + got.error + '）。如果是 GitHub，可换成国内镜像或改用 QQ 群更新。' };
+  // ★ 逐个源尝试，跳过「返回的版本比当前还旧」的缓存响应。
+  //   踩过的坑：jsdelivr 缓存 3~12 小时，主镜像挂了之后会落到它上面，
+  //   拿到上上个版本的 update.json，用户看到的就是「为什么还是旧版本」。
+  const skipped = [];
+  let got = null;
+  let data = null;
+
+  for (let i = 0; i < targets.length; i++) {
+    const one = await fetchFirstOk([targets[i]]);
+    if (!one.ok) {
+      skipped.push('源 ' + (i + 1) + ' 连不上');
+      continue;
+    }
+    let parsed = null;
+    try {
+      parsed = JSON.parse(one.text);
+    } catch (e) {
+      skipped.push('源 ' + (i + 1) + ' 不是 JSON');
+      continue;
+    }
+    const v = String(parsed.version || '');
+    // 拿到的版本比当前还旧 → 一定是缓存，跳过
+    if (v && currentVersion && compareVersions(v, currentVersion) < 0) {
+      console.warn('[update] 源 ' + (i + 1) + ' 返回旧版本 ' + v + '（当前 ' + currentVersion + '），判定为缓存，跳过');
+      skipped.push('源 ' + (i + 1) + ' 是旧缓存 ' + v);
+      continue;
+    }
+    got = one;
+    data = parsed;
+    console.log('[update] 使用源 ' + (i + 1) + '/' + targets.length + '：version=' + v);
+    break;
   }
 
-  let data;
-  try { data = JSON.parse(got.text); }
-  catch (e) { return { hasUpdate: false, error: 'JSON 解析失败（拿到的可能不是 update.json）：' + got.url }; }
+  if (!got || !data) {
+    return {
+      hasUpdate: false,
+      error: '所有更新源都拿不到有效数据' + (skipped.length ? '（' + skipped.join('；') + '）' : ''),
+    };
+  }
 
   const latest = String(data.version || '');
   const dlUrl = String(data.url || '');
