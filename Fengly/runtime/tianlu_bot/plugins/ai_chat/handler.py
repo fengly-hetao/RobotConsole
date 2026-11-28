@@ -180,14 +180,11 @@ async def _stream_reply(bot: Bot, event, user_id: str, user_msg: str, group: boo
         return
     limit_use(user_id, "ai")
     at_prefix = "" if no_at else (MessageSegment.at(user_id) if group else "")
-    buffer: list[str] = []
-    full_chunks: list[str] = []
-    sent_any = False
 
     # ---- 分段策略 ----
-    # 双模式：由 HUMAN_MODE 控制（设置页可切换，.env 里 FEATURE_HUMAN_MODE）
-    #   真人模式（开）：按句发，每句一条，最多 5 条，条间停顿短 → 像真人一句句说
-    #   普通模式（关）：合并成 3~6 条，每条约 40~60 字 → 消息少但每条完整
+    # 双模式：FEATURE_HUMAN_MODE
+    #   真人模式（开）：按句发，最多 5 条
+    #   普通模式（关）：合并成 3~6 条，每条约 40~60 字
     try:
         _human = ai_get_bool("FEATURE_HUMAN_MODE", True)
     except Exception:
@@ -195,46 +192,110 @@ async def _stream_reply(bot: Bot, event, user_id: str, user_msg: str, group: boo
     HUMAN_MODE = bool(_human)
 
     if HUMAN_MODE:
-        MAX_PARTS = 5          # 最多 5 条
-        MIN_CHUNK = 10         # 少于 10 字合并
-        MAX_SINGLE = 70        # 单条上限
+        MAX_PARTS = 5
+        MIN_CHUNK = 10
+        MAX_SINGLE = 70
         GAP_MIN, GAP_MAX = 0.25, 0.6
     else:
-        MAX_PARTS = 6          # 最多 6 条
-        MIN_CHUNK = 40         # 每条约 40 字起
-        MAX_SINGLE = 60        # 每条约 40~60 字
+        MAX_PARTS = 6
+        MIN_CHUNK = 40
+        MAX_SINGLE = 60
         GAP_MIN, GAP_MAX = 0.6, 1.2
 
-    # 保活：随机延迟，模拟真人回复节奏，降低被风控概率
-    try:
-        await asyncio.sleep(random.uniform(0.1, 0.4))
-    except Exception:
-        pass
+    # ★ 边收边发：不再等整段回复收完
+    #   之前的问题：AI 说完整段（1~3 秒）才开始发第一条，用户感觉"半天没反应"
+    #   现在：每凑够一句（遇到 。！？ 等标点且长度够）就立刻发出去
+    import re as _re
+    _SENT_END = _re.compile(r"[。！？!?…~～]")
 
-    try:
-        # ① 先把流式内容全部收下来（不再边收边发）
-        async for piece in _stream_request(user_id, user_msg):
-            buffer.append(piece)
-            full_chunks.append(piece)
+    parts_sent: list[str] = []
+    pending = ""          # 已收但还没发的文字
+    total_chars = 0       # 全部收到多少字（含未发）
+    sent_any = False
+    full_reply = ""       # 完整回复（用于更新历史）
 
-        full_reply = "".join(buffer).strip()
-
-        if not full_reply:
-            fallback = "（歪头）嗯？你说啥？本座没听清～"
-            await bot.send(event, at_prefix + fallback)
-            full_reply = fallback
+    async def _emit(text: str):
+        nonlocal sent_any
+        text = text.strip()
+        if not text:
+            return
+        if not sent_any:
+            await bot.send(event, at_prefix + text)
             sent_any = True
         else:
-            # ② 按标点切成句子
-            import re as _re
-            _sentences = _re.split(r"(?<=[。！？!?…~～])", full_reply)
-            _sentences = [s.strip() for s in _sentences if s.strip()]
+            try:
+                await asyncio.sleep(random.uniform(GAP_MIN, GAP_MAX))
+            except Exception:
+                pass
+            await bot.send(event, text)
+        parts_sent.append(text)
 
-            if HUMAN_MODE:
-                # === 真人模式：每句一条（短句合并），最多 5 条 ===
-                raw: list[str] = []
-                cur = ""
-                for s in _sentences:
+    async def _emit_pending(force: bool = False):
+        """把 pending 里攒够的内容发出去。force=True 时不管够不够都发。"""
+        nonlocal pending
+        if not pending.strip():
+            return
+        # 已达条数上限：不再单发，攒着最后一起
+        if len(parts_sent) >= MAX_PARTS - 1:
+            return
+        # 从 pending 里切出完整句子
+        while len(parts_sent) < MAX_PARTS - 1:
+            m = None
+            for mm in _SENT_END.finditer(pending):
+                if mm.end() >= MIN_CHUNK:
+                    m = mm
+                    break
+            if m is None:
+                break
+            chunk = pending[:m.end()]
+            pending = pending[m.end():]
+            # 单条太长就按 MAX_SINGLE 硬切
+            if len(chunk) > MAX_SINGLE:
+                await _emit(chunk[:MAX_SINGLE])
+                pending = chunk[MAX_SINGLE:] + pending
+            else:
+                await _emit(chunk)
+        if force and pending.strip() and len(parts_sent) < MAX_PARTS:
+            chunk = pending.strip()
+            pending = ""
+            if len(chunk) > MAX_SINGLE:
+                await _emit(chunk[:MAX_SINGLE])
+                pending = chunk[MAX_SINGLE:]
+            else:
+                await _emit(chunk)
+
+    try:
+        # ① 流式接收，边收边发
+        try:
+            async for piece in _stream_request(user_id, user_msg):
+                full_reply += piece
+                total_chars += len(piece)
+                pending += piece
+                await _emit_pending(force=False)
+        except httpx.TimeoutException:
+            logger.warning("[ai_chat] 请求超时")
+            if not sent_any:
+                await bot.send(event, at_prefix + "（甩尾巴）本座卡住了，再试一次！")
+            return
+        except Exception as e:
+            logger.error(f"[ai_chat] 流式异常: {e}")
+            if not sent_any:
+                await bot.send(event, at_prefix + "（歪头）本座脑子卡壳了…")
+            return
+
+        # ② 收尾：把剩下的全发出去
+        full_reply = full_reply.strip()
+        if not sent_any and not full_reply:
+            await bot.send(event, at_prefix + "（歪头）嗯？你说啥？本座没听清～")
+            full_reply = "（歪头）嗯？你说啥？本座没听清～"
+        elif pending.strip():
+            rest = pending.strip()
+            pending = ""
+            # 还有名额就分条发，没名额就拼到最后一条
+            if len(parts_sent) < MAX_PARTS:
+                sents = [s.strip() for s in _re.split(r"(?<=[。！？!?…~～])", rest) if s.strip()]
+                raw, cur = [], ""
+                for s in sents:
                     cur += s
                     if len(cur) >= MIN_CHUNK:
                         raw.append(cur)
@@ -244,97 +305,45 @@ async def _stream_reply(bot: Bot, event, user_id: str, user_msg: str, group: boo
                         raw[-1] += cur
                     else:
                         raw.append(cur)
-            else:
-                # === 普通模式：每条 40~60 字 ===
-                raw = []
-                cur = ""
-                for s in _sentences:
-                    if not cur:
-                        cur = s
+                for p in raw:
+                    if len(parts_sent) >= MAX_PARTS:
+                        break
+                    p = p.strip()
+                    if not p:
                         continue
-                    if len(cur) + len(s) > MAX_SINGLE:
-                        raw.append(cur)
-                        cur = s
-                    else:
-                        cur += s
-                        if len(cur) >= MIN_CHUNK:
-                            raw.append(cur)
-                            cur = ""
-                if cur:
-                    if raw and len(raw[-1]) + len(cur) <= MAX_SINGLE:
-                        raw[-1] += cur
-                    else:
-                        raw.append(cur)
+                    while len(p) > MAX_SINGLE and len(parts_sent) < MAX_PARTS:
+                        await _emit(p[:MAX_SINGLE])
+                        p = p[MAX_SINGLE:]
+                    if p:
+                        await _emit(p)
+            if pending.strip() and parts_sent:
+                # 还有剩的，补发一条（超上限就并进最后一条不行，只能额外发）
+                await _emit(pending.strip())
+                pending = ""
 
-            # ③ 超过 MAX_PARTS 时：把全部内容重新均分到 MAX_PARTS 份（不是全塞最后一条）
-            if len(raw) > MAX_PARTS:
-                _all = "".join(raw)
-                _s2 = [s.strip() for s in _re.split(r"(?<=[。！？!?…~～])", _all) if s.strip()]
-                _n = min(MAX_PARTS, len(_s2))
-                _per = max(1, (len(_all) + _n - 1) // _n)
-                _per = min(_per, MAX_SINGLE)
-                raw = []
-                cur = ""
-                for s in _s2:
-                    if cur and (len(cur) + len(s) > _per) and len(raw) < _n - 1:
-                        raw.append(cur)
-                        cur = s
-                    else:
-                        cur += s
-                if cur:
-                    raw.append(cur)
-                while len(raw) > MAX_PARTS:
-                    raw[-2] += raw[-1]
-                    raw.pop()
+        # ③ 更新历史
+        try:
+            update_history(user_id, user_msg, full_reply or "".join(parts_sent))
+        except Exception:
+            pass
 
-            parts = raw
+        # ④ 好感度
+        try:
+            add_favor(user_id, 1)
+        except Exception:
+            pass
 
-            # ④ 发送
-            for idx, p in enumerate(parts):
-                p = p.strip()
-                if not p:
-                    continue
-                if not sent_any:
-                    await bot.send(event, at_prefix + p)
-                    sent_any = True
-                else:
-                    try:
-                        await asyncio.sleep(random.uniform(GAP_MIN, GAP_MAX))
-                    except Exception:
-                        pass
-                    await bot.send(event, p)
-        sent_any = True
-
-        full_reply = "".join(full_chunks).strip()
-
-        if not sent_any:
-            fallback = "（歪头）嗯？你说啥？本座没听清～"
-            await bot.send(event, at_prefix + fallback)
-            full_reply = fallback
-
-        if len(full_reply) > MAX_REPLY_LENGTH:
-            full_reply = full_reply[:MAX_REPLY_LENGTH]
-
-        update_history(user_id, user_msg, full_reply)
-        add_favor(user_id, 1)
-
-    except (FinishedException, RejectedException):
+    except FinishedException:
         raise
-    except httpx.TimeoutException:
-        logger.error("[ai_chat] API 超时")
-        if not sent_any:
-            try:
-                await bot.send(event, at_prefix + "（甩尾巴）本座卡住了，再试一次！")
-            except Exception:
-                pass
+    except RejectedException:
+        raise
     except Exception as e:
-        logger.error(f"[ai_chat] 流式异常: {type(e).__name__}: {e}", exc_info=True)
+        logger.error(f"[ai_chat] 回复异常: {e}")
         if not sent_any:
             try:
-                await bot.send(event, at_prefix + "（挠头）出错了…")
+                await bot.send(event, at_prefix + "（撇嘴）本座出错了…")
             except Exception:
                 pass
-
 
 # ==================== 语音直读（不走 AI） ====================
 def _extract_voice_text(user_msg: str) -> str | None:

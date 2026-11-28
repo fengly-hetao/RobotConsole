@@ -72,8 +72,12 @@ function showToastIfManual(st, msg) {
 /* 下载更新（补丁优先，失败回退整包）。横幅和资源页共用。 */
 async function handleUpdateDownload(st, btn, hasPatch) {
   if (btn) { btn.disabled = true; btn.textContent = t('update.downloading'); }
-  const prog = document.getElementById('update-progress');
-  if (prog) prog.classList.remove('hidden');
+  const prog = document.getElementById('update-progress-box');
+  if (prog) prog.style.display = '';
+  const bar0 = document.getElementById('update-bar');
+  if (bar0) bar0.style.width = '0%';
+  const ptext0 = document.getElementById('update-progress-text');
+  if (ptext0) ptext0.textContent = '';
 
   // ① 增量补丁
   if (hasPatch && st.patch) {
@@ -81,7 +85,7 @@ async function handleUpdateDownload(st, btn, hasPatch) {
       const pr = await bridge.applyPatch(st.patch);
       if (pr && pr.ok) {
         toast('✅ 快速更新完成（' + (pr.applied || 0) + ' 个文件），正在重启…', 'ok');
-        if (prog) prog.classList.add('hidden');
+        if (prog) prog.style.display = 'none';
         setTimeout(() => { try { bridge.relaunch(); } catch (e) {} }, 1500);
         return;
       }
@@ -102,7 +106,7 @@ async function handleUpdateDownload(st, btn, hasPatch) {
     );
     if (!ok) {
       if (btn) { btn.disabled = false; btn.textContent = '⬇ 下载完整安装包'; }
-      if (prog) prog.classList.add('hidden');
+      if (prog) prog.style.display = 'none';
       return;
     }
   }
@@ -124,7 +128,7 @@ async function handleUpdateDownload(st, btn, hasPatch) {
           };
         }
         toast('✅ 安装包已下载,点「立即安装」启动安装程序', 'ok');
-        if (prog) prog.classList.add('hidden');
+        if (prog) prog.style.display = 'none';
       } else {
         toast(t('update.downloadedStart'), 'ok');
       }
@@ -414,6 +418,10 @@ async function renderHome() {
       <div style="flex:1;min-width:0">
         <div>🎉 <span data-i18n="update.found"></span> <b id="update-version"></b></div>
         <div id="update-notes" style="font-size:12px;opacity:.75;margin-top:4px"></div>
+        <div id="update-progress-box" style="display:none;margin-top:8px">
+          <div class="gauge" style="height:6px"><div id="update-bar" style="width:0%"></div></div>
+          <div id="update-progress-text" style="font-size:12px;opacity:.75;margin-top:4px"></div>
+        </div>
       </div>
       <span class="btn-row" style="margin:0;flex-shrink:0">
         <button class="btn primary sm" id="btn-update-go" data-i18n="update.go"></button>

@@ -1,5 +1,5 @@
 {
-  "version": "1.9.15",
+  "version": "1.9.16",
   "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.14/RobotConsole-Setup-1.9.14.exe",
   "downloadPage": "https://github.com/fengly-hetao/RobotConsole/releases",
   "extraDownloadPages": [
@@ -11,85 +11,93 @@
   "patch": [
     {
       "from": "1.9.5",
-      "to": "1.9.15",
-      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.15/patch-1.9.5-to-1.9.15.zip",
-      "size": 181327,
-      "sha256": "076ab7c7d557823ae5bd6ec6c35d49f1d96e6d053120816ce17ffe079878a9a7",
+      "to": "1.9.16",
+      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.16/patch-1.9.5-to-1.9.16.zip",
+      "size": 181646,
+      "sha256": "3c2361e5941adeff41b8c5aba16d4b7fda3ee1c786b0e8591668a845dacb32b6",
       "deleted": []
     },
     {
       "from": "1.9.6",
-      "to": "1.9.15",
-      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.15/patch-1.9.6-to-1.9.15.zip",
-      "size": 155617,
-      "sha256": "f8f8866b0397183a896ef3d4326d0837f67249f3c23f05e506421290e5c7ed83",
+      "to": "1.9.16",
+      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.16/patch-1.9.6-to-1.9.16.zip",
+      "size": 155936,
+      "sha256": "637533f18ecad00b64beea2bb0c28adc729296f17b9eba60746bee2e5f67d8f2",
       "deleted": []
     },
     {
       "from": "1.9.7",
-      "to": "1.9.15",
-      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.15/patch-1.9.7-to-1.9.15.zip",
-      "size": 162109,
-      "sha256": "3b3b68e70a18d88a57bc50fcef72e113769c87a5f889625fc3fce66fa6c04b67",
+      "to": "1.9.16",
+      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.16/patch-1.9.7-to-1.9.16.zip",
+      "size": 162428,
+      "sha256": "fa57f9d25eb5d9bcc7f35bd20281c60cb967284be86f59271f25b9ebf614fc5d",
       "deleted": []
     },
     {
       "from": "1.9.8",
-      "to": "1.9.15",
-      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.15/patch-1.9.8-to-1.9.15.zip",
-      "size": 186056,
-      "sha256": "d759e57333b0ddd4c040cbf41bfd933cb38736ba71b6a03e1558dc15061601d3",
+      "to": "1.9.16",
+      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.16/patch-1.9.8-to-1.9.16.zip",
+      "size": 186375,
+      "sha256": "18094fd1ac9fec3f24ff4df0e6249c558c02395e504906811e323624ee92b231",
       "deleted": []
     },
     {
       "from": "1.9.9",
-      "to": "1.9.15",
-      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.15/patch-1.9.9-to-1.9.15.zip",
-      "size": 123075,
-      "sha256": "925aa3d1cb4681b007f9aa43640b92281d6e44d11b1b57a092241d418bf4a240",
+      "to": "1.9.16",
+      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.16/patch-1.9.9-to-1.9.16.zip",
+      "size": 123394,
+      "sha256": "8e2e79ae04cea8a822a08dd287ff856fe2a0e986956060f3c5fe8823fd44959c",
       "deleted": []
     },
     {
       "from": "1.9.10",
-      "to": "1.9.15",
-      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.15/patch-1.9.10-to-1.9.15.zip",
-      "size": 117368,
-      "sha256": "4de5f02fc305b960f48e468b7386497bdc0e1cbd5af86ac9c825080934d31552",
+      "to": "1.9.16",
+      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.16/patch-1.9.10-to-1.9.16.zip",
+      "size": 117687,
+      "sha256": "ffe190e44ecf178c66c2571caf9af35232ec645a8ed907cd058db52a38e20aa9",
       "deleted": []
     },
     {
       "from": "1.9.11",
-      "to": "1.9.15",
-      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.15/patch-1.9.11-to-1.9.15.zip",
-      "size": 112473,
-      "sha256": "5ee30e18b8e91e8b165131c38e04ee2ed33acb0b5e4548d652647e7304d75f0b",
+      "to": "1.9.16",
+      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.16/patch-1.9.11-to-1.9.16.zip",
+      "size": 112792,
+      "sha256": "88ef970e06191ae06fbfbf530212c4c513c237b4ce786ec6934827281bf51d33",
       "deleted": []
     },
     {
       "from": "1.9.12",
-      "to": "1.9.15",
-      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.15/patch-1.9.12-to-1.9.15.zip",
-      "size": 112473,
-      "sha256": "5ee30e18b8e91e8b165131c38e04ee2ed33acb0b5e4548d652647e7304d75f0b",
+      "to": "1.9.16",
+      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.16/patch-1.9.12-to-1.9.16.zip",
+      "size": 112792,
+      "sha256": "88ef970e06191ae06fbfbf530212c4c513c237b4ce786ec6934827281bf51d33",
       "deleted": []
     },
     {
       "from": "1.9.13",
-      "to": "1.9.15",
-      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.15/patch-1.9.13-to-1.9.15.zip",
-      "size": 109834,
-      "sha256": "cc430ed6efbe7260adaa2a140397940cb6a1c87c5d43db1f4b2d30fdf91cf9db",
+      "to": "1.9.16",
+      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.16/patch-1.9.13-to-1.9.16.zip",
+      "size": 110153,
+      "sha256": "583a63f3477e0f21bfa49ec916a555592d18ac15f5e00cf7931e7ee8b74cabd7",
       "deleted": []
     },
     {
       "from": "1.9.14",
-      "to": "1.9.15",
-      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.15/patch-1.9.14-to-1.9.15.zip",
-      "size": 78201,
-      "sha256": "37f3599277d1d3100801bd1fb77511497c7b79d46b0d16e93949bc0e397f9af4",
+      "to": "1.9.16",
+      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.16/patch-1.9.14-to-1.9.16.zip",
+      "size": 78520,
+      "sha256": "aea455fd574ed75958619ac1bccb3f9ff50ef1f7f8e3f8b48c921259251d0848",
+      "deleted": []
+    },
+    {
+      "from": "1.9.15",
+      "to": "1.9.16",
+      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.16/patch-1.9.15-to-1.9.16.zip",
+      "size": 71248,
+      "sha256": "cbc1c9eef6e2976821a57d8b608165d4efcbdbaa954d935966dbbe80550dbd45",
       "deleted": []
     }
   ],
-  "notes": "v1.9.15\n\n【新增】真人说话模式（设置页可切换）\n· 开（默认）：按句发，每句一条，最多 5 条，停顿 0.25~0.6 秒 → 像真人一句句说\n· 关：合并成 3~6 条，每条约 40~60 字，停顿 0.6~1.2 秒\n· 位置：功能开关 → 聊天 → 「真人说话模式」\n\n【修复】响应太慢\n· 冷却时间 5 秒 → 1 秒（之前连发第二条会回「急什么！让本座缓5秒！」）\n· 初始延迟 0.5~2.0 秒 → 0.1~0.4 秒\n· MAX_TOKENS 350 → 500，MAX_REPLY_LENGTH 200 → 500\n\n【继承 1.9.14】\n· AI 发送输入框不再卡死\n· 更新不再自动静默重装\n· 下载多源自动回退（gh-proxy → ghfast → ghproxy）\n\n【继承 1.9.13】\n· 配置自动补全（解决老用户 updateUrl 为空导致检查更新失败）\n\n说明：完整安装包暂未上传，新用户请下载 1.9.14 完整包后再更新到 1.9.15。\n1.9.5 ~ 1.9.14 用户点更新只需下载 76~182 KB 补丁。",
+  "notes": "v1.9.16\n\n【修复】点下载更新没反应\n· 更新横幅里根本没有进度条元素，程序一直在找不存在的 update-bar\n· 现在补上了：点更新能看到下载进度、解压、安装提示\n\n【修复】@ 后回复太慢\n· 核心改进：边收边发。之前要等 AI 说完一整段（1~2 秒）才发第一条\n· 现在收够第一句就发。实测：AI 说完需 1620ms 时，第一条 514ms 就发出（快 3 倍）\n· 冷却时间 5 秒 → 0（连发不再被拦）\n· 初始延迟 0.5~2.0 秒 → 0.0~0.15 秒\n· 上下文完整保留（MAX_HISTORY 仍是 20 条，机器人照样记得前面说的）\n\n【继承 1.9.15】\n· 真人说话模式（设置页开关）：开=按句发最多5条，关=合并3~6条每条约40~60字\n\n【继承 1.9.14】\n· AI 发送输入框不再卡死\n· 更新不再自动静默重装\n· 下载多源自动回退（gh-proxy → ghfast → ghproxy）\n\n补丁：1.9.5 ~ 1.9.15 都能升级（69~182 KB）",
   "force": false
 }
