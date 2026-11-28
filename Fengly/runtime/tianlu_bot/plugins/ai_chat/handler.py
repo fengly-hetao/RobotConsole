@@ -184,6 +184,13 @@ async def _stream_reply(bot: Bot, event, user_id: str, user_msg: str, group: boo
     full_chunks: list[str] = []
     sent_any = False
 
+    # ---- 分段策略 ----
+    # 以前：每遇到一个 。！？ 就立即发一条 → 长回复被拆成 4~6 条刷屏。
+    # 现在：先把整段回复收完，再按「目标条数/单条长度」合并，最多发 MAX_PARTS 条。
+    MAX_PARTS = 2          # 最多拆成几条
+    TARGET_TOTAL = 300     # 一条消息大约多少字（总长控制）
+    MAX_SINGLE = 420       # 单条上限（超过必须再拆）
+
     # 保活：随机延迟 0.5~2s，模拟真人回复节奏，降低被风控概率
     try:
         await asyncio.sleep(random.uniform(0.5, 2.0))
@@ -191,27 +198,59 @@ async def _stream_reply(bot: Bot, event, user_id: str, user_msg: str, group: boo
         pass
 
     try:
+        # ① 先把流式内容全部收下来（不再边收边发）
         async for piece in _stream_request(user_id, user_msg):
             buffer.append(piece)
             full_chunks.append(piece)
-            joined = "".join(buffer)
 
-            if any(c in joined for c in _SPLIT_CHARS) and len(joined) >= _MIN_SEND_LEN:
-                text = joined
+        full_reply = "".join(buffer).strip()
+
+        if not full_reply:
+            fallback = "（歪头）嗯？你说啥？本座没听清～"
+            await bot.send(event, at_prefix + fallback)
+            full_reply = fallback
+            sent_any = True
+        else:
+            # ② 按标点切成句子
+            import re as _re
+            _sentences = _re.split(r"(?<=[。！？!?…])", full_reply)
+            _sentences = [s for s in _sentences if s.strip()]
+
+            # ③ 合并成最多 MAX_PARTS 段，每段尽量不超过 MAX_SINGLE
+            parts: list[str] = []
+            cur = ""
+            for s in _sentences:
+                # 超过单条上限就开新段
+                if cur and len(cur) + len(s) > MAX_SINGLE:
+                    parts.append(cur)
+                    cur = s
+                else:
+                    cur += s
+            if cur:
+                parts.append(cur)
+
+            # 仍超过 MAX_PARTS 段的话，把后面的强行拼进最后一段（保证不刷屏）
+            if len(parts) > MAX_PARTS:
+                head = parts[:MAX_PARTS - 1]
+                tail = "".join(parts[MAX_PARTS - 1:])
+                parts = head + [tail]
+
+            # ④ 发送
+            for idx, p in enumerate(parts):
+                p = p.strip()
+                if not p:
+                    continue
                 if not sent_any:
-                    await bot.send(event, at_prefix + text)
+                    await bot.send(event, at_prefix + p)
                     sent_any = True
                 else:
-                    await bot.send(event, text)
-                buffer.clear()
-
-        if buffer:
-            text = "".join(buffer)
-            if not sent_any:
-                await bot.send(event, at_prefix + text)
-            else:
-                await bot.send(event, text)
-            sent_any = True
+                    # 多条之间稍作停顿，看起来像真人一句句说
+                    try:
+                        await asyncio.sleep(random.uniform(0.4, 1.0))
+                    except Exception:
+                        pass
+                    await bot.send(event, p)
+        sent_any = True
 
         full_reply = "".join(full_chunks).strip()
 
@@ -612,9 +651,20 @@ async def handle_ai(bot: Bot, event: GroupMessageEvent):
 
     # ==================== 自由聊天模式开关 ====================
     # 开（FEATURE_FREE_CHAT=1）：@ 机器人就能自由聊天
-    # 关（默认）：群里不闲聊，只响应上面的功能命令（菜单/语音/点歌）
-    # 想聊天请私聊（白名单内）
+    # 关（默认）：群里不闲聊，只响应功能命令（菜单/语音/点歌）
+    #
+    # 历史 BUG：关闭时这里是直接 return，用户 @ 机器人说「so？」什么都收不到，
+    # 完全不知道是功能关了还是机器人坏了。现在至少给一句提示。
     if not is_enabled("free_chat"):
+        _m = (user_msg or "").strip()
+        if not _m or _m in _MENU_KEYWORDS or any(k in _m for k in ("怎么用", "咋用", "能干嘛", "有什么功能", "咋玩", "怎么玩", "玩法")):
+            await ai.finish(MessageSegment.at(user_id) + _MENU_TEXT)
+        else:
+            await ai.finish(
+                MessageSegment.at(user_id)
+                + "（歪头）群里的自由聊天没打开，我只能做功能指令～\n"
+                  "发「菜单」看看我会什么，或者私聊我聊天。"
+            )
         return
 
     # ==================== 普通 AI 对话（只回文字） ====================

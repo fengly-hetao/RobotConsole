@@ -1,45 +1,53 @@
 {
-  "version": "1.9.9",
-  "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/%E6%9C%BA%E5%99%A8%E4%BA%BA%E6%8E%A7%E5%88%B6%E5%8F%B0-Setup-1.9.9.exe",
-  "downloadPage": "https://4001880759.share.123pan.cn/123pan/ijXeMh-bChe3",
+  "version": "1.9.10",
+  "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/%E6%9C%BA%E5%99%A8%E4%BA%BA%E6%8E%A7%E5%88%B6%E5%8F%B0-Setup-1.9.10.exe",
+  "downloadPage": "https://4001880759.share.123pan.cn/123pan/ijXeMh-eChe3",
   "extraDownloadPages": [
-    { "label": "安装版（.exe）", "url": "https://4001880759.share.123pan.cn/123pan/ijXeMh-bChe3" },
-    { "label": "免安装版（.zip）", "url": "https://4001880759.share.123pan.cn/123pan/ijXeMh-z6ht3" }
+    { "label": "安装版（.exe）", "url": "https://4001880759.share.123pan.cn/123pan/ijXeMh-eChe3" },
+    { "label": "免安装版（.zip）", "url": "https://4001880759.share.123pan.cn/123pan/ijXeMh-cChe3" }
   ],
   "patch": [
     {
       "from": "1.9.5",
-      "to": "1.9.9",
-      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.5-to-1.9.9.zip",
-      "size": 134716,
-      "sha256": "17aaf158863ce7cbd1069e853aadfa770352ed943da081e7c8fbd3282147e566",
+      "to": "1.9.10",
+      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.9-to-1.9.10.zip",
+      "size": 15992,
+      "sha256": "5adb9b4e6b84b62e08a8fa0ce34379122a6a288dda019b9dc2e0300c65a35299",
       "deleted": []
     },
     {
       "from": "1.9.6",
-      "to": "1.9.9",
-      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.6-to-1.9.9.zip",
-      "size": 112835,
-      "sha256": "806aa948f7ae0bd9dc0e163c89075fd3a88f4e9239586b6e7f4606f72f5d3de4",
+      "to": "1.9.10",
+      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.9-to-1.9.10.zip",
+      "size": 15992,
+      "sha256": "5adb9b4e6b84b62e08a8fa0ce34379122a6a288dda019b9dc2e0300c65a35299",
       "deleted": []
     },
     {
       "from": "1.9.7",
-      "to": "1.9.9",
-      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.7-to-1.9.9.zip",
-      "size": 112835,
-      "sha256": "806aa948f7ae0bd9dc0e163c89075fd3a88f4e9239586b6e7f4606f72f5d3de4",
+      "to": "1.9.10",
+      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.9-to-1.9.10.zip",
+      "size": 15992,
+      "sha256": "5adb9b4e6b84b62e08a8fa0ce34379122a6a288dda019b9dc2e0300c65a35299",
       "deleted": []
     },
     {
       "from": "1.9.8",
-      "to": "1.9.9",
-      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.8-to-1.9.9.zip",
-      "size": 106230,
-      "sha256": "496ef82ac8a988d99432367f00932c09775a6b7d4118605fe7d47400e711d416",
+      "to": "1.9.10",
+      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.9-to-1.9.10.zip",
+      "size": 15992,
+      "sha256": "5adb9b4e6b84b62e08a8fa0ce34379122a6a288dda019b9dc2e0300c65a35299",
+      "deleted": []
+    },
+    {
+      "from": "1.9.9",
+      "to": "1.9.10",
+      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.9-to-1.9.10.zip",
+      "size": 15992,
+      "sha256": "5adb9b4e6b84b62e08a8fa0ce34379122a6a288dda019b9dc2e0300c65a35299",
       "deleted": []
     }
   ],
-  "notes": "v1.9.9\n\n【修复】机器人回复逻辑\n· 不再用昵称判断是否 @ 机器人，改看 QQ 号 —— 不管你把机器人改成什么名字都能正常响应\n· 修复正常聊天被误当成游戏命令（回你游戏结果）\n· 修复说「今天运势怎么样」被当成运势指令\n· 修复 @机器人发游戏命令后还追一句「这个我不会」\n· 修复 tools 插件在换昵称后完全不响应\n\n【新增】系统监控（系统资源页）\n· CPU / RAM / DISK / GPU / NET 五项指标\n· GPU 能正确识别独显（自动排除向日葵、ToDesk 等虚拟屏）\n· 网速显示实时上传/下载速度\n\n【新增】系统资源页\n· 之前这个页面根本没有入口，现在在左侧导航可以打开\n· 页面内加入「RobotConsole 版本」卡片，可手动检查更新\n\n【修复】更新提示\n· 修复一次点击弹两个、甚至三个提示的问题\n· 修复「关于」页和系统资源页版本号永远显示 1.0.0\n\n【增强】系统清理\n· 支持扫描绿色版 / 便携版软件（之前只扫注册表，装了很多软件却一个都扫不到）\n· 新增识别：CursorZoom、BatchRenamer、快压、Hao123 等\n· 新增「💪 深度清理」：结束进程 → 停止服务 → 卸载 → 扫描清理残留（目录/注册表/启动项/服务/计划任务）\n· 删除前自动备份，可恢复\n· 网盘、火绒、系统运行库三重保护，绝不误删\n\n【升级说明】\n· 1.9.5 ~ 1.9.8 用户点更新只需下载 100 KB 左右的补丁\n· 更早版本会下载完整安装包\n\n重要说明：\n· NapCat 已于 2026-11-14 停止更新并删库，当前内置 v4.18.41 本地自包含\n· QQ 需保持 9.9.33（本程序会自动锁定 runtime QQ 防止被升级）",
+  "notes": "v1.9.10\n\n【修复】@机器人聊天没反应\n· FEATURE_FREE_CHAT 从默认关闭改为默认开启 —— 装完 @ 机器人就能直接聊天\n· 之前群里的自由聊天是关的，@ 它说「so？」会完全静默（一个字都不回）\n· 现在即使关着，也会提示「自由聊天没打开，发菜单看看我会什么」\n\n【修复】回复被拆成 4~6 条刷屏\n· 之前每遇到一个句号/问号就发一条，长回复被拆成十几条\n· 现在先收完再合并，最多发 2 条，单条上限 420 字\n· 多条之间停顿 0.4~1 秒，像真人一句句说\n\n【重要】修复增量补丁漏文件\n· 之前打包补丁时把 runtime 目录整个排除了，导致所有 Python 插件的修复都没进补丁\n· 1.9.5~1.9.9 的补丁其实只更新了 JS，AI 聊天/游戏等插件修复全部丢失\n· 现在已修正，补丁会正确包含 Python 插件\n\n继承 1.9.9 的全部功能：\n· 昵称通用化（改名字也能用）\n· CPU/RAM/DISK/GPU/NET 五项监控\n· 系统清理（绿色版扫描 + 深度清理）\n· 系统资源页 RobotConsole 更新检查\n\n重要说明：\n· NapCat 已于 2026-11-14 停止更新并删库，当前内置 v4.18.41 本地自包含\n· QQ 需保持 9.9.33（本程序会自动锁定 runtime QQ 防止被升级）",
   "force": false
 }

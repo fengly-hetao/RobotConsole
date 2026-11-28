@@ -91,8 +91,13 @@ async function buildPatch(prevDir, currDir, outZip, meta) {
   const AdmZip = require('adm-zip');
   const zip = new AdmZip();
 
-  const EXCLUDE = ['node_modules', 'dist', 'runtime', '.git'];
-  const EXCLUDE_EXT = ['.map'];   // sourcemap 体积大且无运行时价值
+  // ★ runtime 不能整个排除：
+  //   里面有第三方二进制（qq/napcat/tools/win64，体积数百 MB，不该进补丁），
+  //   但也有我们自己维护的 Python 插件（runtime/tianlu_bot），改一行就得进补丁。
+  //   之前整个 runtime 被排除，导致 AI 聊天插件、游戏插件等修复完全打不进补丁。
+  const EXCLUDE = ['node_modules', 'dist', '.git'];
+  const EXCLUDE_RUNTIME_BIN = ['qq', 'napcat', 'tools', 'win64', 'backups', 'napcat-versions'];
+  const EXCLUDE_EXT = ['.map', '.pyc'];   // sourcemap / Python 字节码无运行时价值
   const currFiles = walk(currDir, currDir, [], EXCLUDE, EXCLUDE_EXT);
   const prevFiles = (prevDir && fs.existsSync(prevDir)) ? walk(prevDir, prevDir, [], EXCLUDE, EXCLUDE_EXT) : [];
 

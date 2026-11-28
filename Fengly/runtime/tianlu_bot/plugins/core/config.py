@@ -261,9 +261,19 @@ BOT_HOST = os.getenv("BOT_HOST", "127.0.0.1")
 
 
 # ==================== 功能开关（ai_data/00_features.env，单一真相源）====================
+# 这些功能默认开启（用户装完就能用，不用去 .env 里手动改）
+DEFAULT_ON = {"free_chat", "ai_chat", "games", "tools", "welcome"}
+
+
 def is_enabled(name: str) -> bool:
-    """功能开关：FEATURE_XXX=true/false，默认关（安全第一）"""
-    return ai_get_bool(f"FEATURE_{name.upper()}", False)
+    """功能开关：FEATURE_XXX=true/false。
+
+    历史问题：free_chat 默认关，导致用户 @ 机器人说「so？」什么都不回
+    （.env 里也没写这一行，用户根本不知道要开）。现在把这些常用功能默认设为开，
+    用户明确写 =false 才关。
+    """
+    default = True if str(name).lower() in DEFAULT_ON else False
+    return ai_get_bool(f"FEATURE_{name.upper()}", default)
 
 
 # ==================== 游戏命令黑名单（按启用的功能动态生成）====================
