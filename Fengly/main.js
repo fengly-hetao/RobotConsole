@@ -58,6 +58,7 @@ const python = require('./modules/python');
 const network = require('./modules/network');
 const sysinfo = require('./modules/sysinfo');
 const updater = require('./modules/updater');
+const configfix = require('./modules/configfix');
 const groupupdate = require('./modules/groupupdate');
 const envfile = require('./modules/envfile');
 const pluginsMod = require('./modules/plugins');
@@ -338,7 +339,19 @@ function bootstrap() {
     return '1.0.0';
   }
   async function runUpdateCheck(manual) {
-    const feed = store.get('updateUrl') || '';
+    // ★ updateUrl 为空时必须回退到默认源。
+    //   历史 BUG：老用户升级上来时 settings.json 里 updateUrl 是空字符串，
+    //   而 store 的默认值只在「键不存在」时生效，值已存在就原样返回 ""。
+    //   结果两个更新源都为空 → runUpdateCheck 静默返回 → 界面只显示「检查失败」，
+    //   实际根本没去网络上查。
+    const DEFAULT_UPDATE_URL = 'https://github.com/fengly-hetao/RobotConsole';
+    let feed = store.get('updateUrl');
+    feed = (feed == null) ? '' : String(feed).trim();
+    if (!feed) {
+      feed = DEFAULT_UPDATE_URL;
+      console.log('[update] updateUrl 为空，回退到默认源: ' + DEFAULT_UPDATE_URL);
+      try { store.merge({ updateUrl: DEFAULT_UPDATE_URL }); } catch (e) {}
+    }
     const groupId = store.get('updateGroupId') || '';
     let info = null;
     let source = 'url';
@@ -368,13 +381,33 @@ function bootstrap() {
     }
     // ② 回退：网盘 update.json
     if (!info && feed) {
-      info = await updater.checkUpdate(feed, currentAppVersion());
+      console.log('[update] 开始检查网盘源: ' + feed);
+      const t0 = Date.now();
+      try {
+        info = await updater.checkUpdate(feed, currentAppVersion());
+        console.log('[update] 网盘源返回（' + (Date.now() - t0) + 'ms）: ' +
+          JSON.stringify({
+            hasUpdate: info && info.hasUpdate,
+            latest: info && info.latest,
+            error: info && info.error,
+            feedUrl: info && info.feedUrl,
+            disabled: info && info.disabled
+          }));
+      } catch (e) {
+        console.error('[update] 网盘源抛异常: ' + (e && e.message));
+        info = { hasUpdate: false, error: '检查异常：' + ((e && e.message) || String(e)) };
+      }
       source = 'url';
     }
     if (!info) {
       info = { hasUpdate: false, disabled: !feed && !groupId };
       // 两个源都没有结果时，把 Q 群的失败原因暴露给界面
       if (groupId && groupError) info.error = groupError;
+      if (!info.error) {
+        if (!feed && !groupId) info.error = '没有配置更新源（设置页的 updateUrl 为空）';
+        else if (!feed) info.error = '没有配置网盘更新源，且群文件里也没有 update.json';
+        else info.error = '更新源检查未返回结果（可能是网络拦截或 DNS 问题）';
+      }
     }
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('update:status', { checking: false, manual, hasUpdate: !!(info && info.hasUpdate), latest: info && info.latest, url: info && info.url, notes: info && info.notes, error: info && info.error, disabled: info && info.disabled, current: currentAppVersion(), source });
@@ -1760,6 +1793,23 @@ JSON 必须包含以下字段：
   app.whenReady().then(async () => {
     console.log('[main] whenReady fired');
     store = new Store();
+
+    // ★ 配置补全：重装 / 换电脑 / 老版本升级上来时，settings.json 里可能缺字段
+    //   或字段是空字符串（最常见：updateUrl 为空 → 检查更新永远失败）。
+    //   这里把「必须有值」的字段补上默认值，只补空的不覆盖用户已填的。
+    try {
+      const _fix = configfix.fillSettings(store.get());
+      if (_fix.changed) {
+        store.merge(_fix.settings);
+        console.log('[config] 已补全 ' + _fix.filled.length + ' 项缺失配置：');
+        _fix.filled.forEach((x) => console.log('[config]   + ' + x));
+      } else {
+        console.log('[config] 配置完整，无需补全');
+      }
+    } catch (e) {
+      console.error('[config] 补全失败: ' + (e && e.message));
+    }
+
     procman = new ProcessManager();
     procman.setSender((channel, payload) => { if (mainWindow) mainWindow.webContents.send(channel, payload); });
 
