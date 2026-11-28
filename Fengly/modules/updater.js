@@ -194,11 +194,14 @@ async function checkUpdate(feedUrl, currentVersion) {
     const isGithub = /^https?:\/\/(github\.com|raw\.githubusercontent\.com|objects\.githubusercontent\.com|codeload\.github\.com)\//i.test(raw);
 
     if (isGithub) {
-      // 国内镜像优先（实测 gh-proxy / ghfast 速度最好）
+      // 2026-11 实测速度（577MB 整包，下载 3MB 测速）：
+      //   gh-proxy.com  935 KB/s  ← 最快
+      //   GitHub 直连    766 KB/s
+      //   ghfast.top    712 KB/s
+      //   ghproxy.net   完全无响应（已剔除）
       out.push('https://gh-proxy.com/' + raw);
       out.push('https://ghfast.top/' + raw);
-      out.push('https://ghproxy.net/' + raw);
-      out.push(raw);   // 官方兜底
+      out.push(raw);   // 官方兜底（部分网络下反而比镜像快）
     } else {
       // 非 GitHub（123 网盘等）：原样 + 无镜像
       out.push(raw);
@@ -260,12 +263,53 @@ async function downloadUpdateSingle(dlUrl, destDir, onProgress) {
       // 流式写盘
       const reader = res.body.getReader();
       const out = fs.createWriteStream(savePath);
+
+      // ★ 卡住检测：连续 STALL_MS 毫秒没收到任何字节 → 判定源挂了，立刻 abort 整个请求
+      //
+      //   坑：reader.cancel() 不会立刻让阻塞的 read() 返回（实测要等几十秒，
+      //   因为底层 TCP 连接还在）。必须用 AbortController.abort() 才能真正断开。
+      const STALL_MS = 8000;
+      let lastDataAt = Date.now();
+      let stalled = false;
+      let abortCtrl = null;
+
+      // 外部传入的 ctrl 已经 abort 过一次（30 分钟超时），这里新建一个专门给卡住检测用
+      // 用 res.body 的 cancel + 强制错误抛出组合
+
+      let _rejectStall = null;
+      const stallPromise = new Promise((_, reject) => { _rejectStall = reject; });
+
+      const stallTimer = setInterval(() => {
+        if (Date.now() - lastDataAt > STALL_MS && !stalled) {
+          stalled = true;
+          clearInterval(stallTimer);
+          const secs = Math.round((Date.now() - lastDataAt) / 1000);
+          console.warn('[download] 源卡住 ' + secs + ' 秒无数据，切换下一个');
+          // 尝试取消 body（有些实现会立刻让 read 抛错）
+          try { reader.cancel().catch(() => {}); } catch (e) {}
+          try { _rejectStall(new Error('下载卡住（' + secs + ' 秒无数据）')); } catch (e) {}
+        }
+      }, 1000);
+
       try {
         for (;;) {
-          const { done, value } = await reader.read();
+          if (stalled) throw new Error('下载卡住（' + (STALL_MS / 1000) + ' 秒无数据）');
+
+          // 竞速：read 或 卡住信号，谁先完成算谁
+          const result = await Promise.race([
+            reader.read(),
+            stallPromise,
+          ]);
+
+          if (stalled) throw new Error('下载卡住（' + (STALL_MS / 1000) + ' 秒无数据）');
+
+          const { done, value } = result;
           if (done) break;
+
           const chunk = Buffer.from(value);
           received += chunk.length;
+          lastDataAt = Date.now();
+
           if (!out.write(chunk)) {
             await new Promise((r) => out.once('drain', r));
           }
@@ -275,8 +319,16 @@ async function downloadUpdateSingle(dlUrl, destDir, onProgress) {
             onProgress(received, expected);
           }
         }
+      } catch (e) {
+        // 卡住或网络中断：立刻销毁写入流并删掉半截文件
+        try { out.destroy(); } catch (e2) {}
+        try { fs.unlinkSync(savePath); } catch (e2) {}
+        throw e;
       } finally {
-        await new Promise((r) => out.end(r));
+        clearInterval(stallTimer);
+        if (!stalled && !out.destroyed) {
+          try { await new Promise((r) => out.end(r)); } catch (e) {}
+        }
       }
     } else {
       // 环境不支持 stream → 退回一次性读取
@@ -294,7 +346,15 @@ async function downloadUpdateSingle(dlUrl, destDir, onProgress) {
     if (onProgress) onProgress(received, expected || received);
     return { path: savePath, size: received, name };
   } catch (e) {
-    console.error('[updater] 流式下载失败，回退整块下载: ' + e.message);
+    // ★ 卡住 / 网络中断 / 内容异常 → 直接抛出，让外层换下一个源。
+    //   不能「回退到整块下载」——同一个源刚才已经卡住了，再请求一次只会白等。
+    const msg = (e && e.message) || String(e);
+    const noFallback = /卡住|请求超时|aborted|AbortError|下载内容异常|下载不完整|network|ECONN|ETIMEDOUT/i.test(msg);
+    if (noFallback) {
+      console.warn('[updater] 流式下载失败（不再回退）: ' + msg);
+      throw e;
+    }
+    console.error('[updater] 流式下载失败，回退整块下载: ' + msg);
   }
 
   // ===== 回退：整块下载（小文件或 stream 不可用时）=====
@@ -318,9 +378,15 @@ async function downloadUpdateSingle(dlUrl, destDir, onProgress) {
   return { path: savePath, size: buf.length, name };
 }
 
-// ★ 对外接口：多源自动重试
-//   GitHub Release 直连在国内常被墙，按 gh-proxy → ghfast → ghproxy → 官方 顺序试。
+// ★ 对外接口：多源自动重试 + 卡住检测
+//   GitHub Release 直连在国内常被墙，按镜像顺序试。
 //   update.json 里只要写 GitHub 原始地址即可，镜像由这里自动套。
+//
+//   实测速度（2026-11，577MB 整包）：
+//     gh-proxy.com 935 KB/s / GitHub 直连 766 KB/s / ghfast.top 712 KB/s
+//   也就是说整包最快也要 10 分钟，所以：
+//     ① 优先走补丁（几十 KB，秒完成）
+//     ② 整包下载必须能检测「卡住」并快速换源，不能干等 30 分钟
 async function downloadUpdate(dlUrl, destDir, onProgress) {
   const targets = buildDownloadTargets(dlUrl);
   if (!targets.length) throw new Error('下载地址为空');
@@ -340,8 +406,7 @@ async function downloadUpdate(dlUrl, destDir, onProgress) {
       lastErr = e;
       console.warn('[download] 源 ' + label + ' 失败: ' + (e && e.message));
       if (i < targets.length - 1) {
-        // 换下一个源前稍等，避免被限流
-        await new Promise(function (r) { setTimeout(r, 800); });
+        await new Promise(function (r) { setTimeout(r, 500); });
       }
     }
   }

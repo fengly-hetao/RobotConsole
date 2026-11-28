@@ -71,74 +71,126 @@ function showToastIfManual(st, msg) {
 }
 /* 下载更新（补丁优先，失败回退整包）。横幅和资源页共用。 */
 async function handleUpdateDownload(st, btn, hasPatch) {
-  if (btn) { btn.disabled = true; btn.textContent = t('update.downloading'); }
-  const prog = document.getElementById('update-progress-box');
-  if (prog) prog.style.display = '';
-  const bar0 = document.getElementById('update-bar');
-  if (bar0) bar0.style.width = '0%';
-  const ptext0 = document.getElementById('update-progress-text');
-  if (ptext0) ptext0.textContent = '';
+  const banner = document.getElementById('update-banner');
+  const box = document.getElementById('update-progress-box');
+  const bar = document.getElementById('update-bar');
+  const txt = document.getElementById('update-progress-text');
+  const notes = document.getElementById('update-notes');
 
-  // ① 增量补丁
+  // 统一的状态显示函数
+  const setStatus = (pct, text, color) => {
+    if (banner && banner.classList.contains('hidden')) banner.classList.remove('hidden');
+    if (box) box.style.display = '';
+    if (bar) {
+      bar.style.width = pct + '%';
+      bar.style.minWidth = pct > 0 ? '2px' : '0';
+      if (color) bar.style.background = color;
+    }
+    if (txt) txt.textContent = text || '';
+  };
+
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 准备中…'; }
+  setStatus(0, '准备下载…');
+
+  // ==================== ① 增量补丁 ====================
   if (hasPatch && st.patch) {
+    const kb = Math.max(1, Math.round((st.patch.size || 0) / 1024));
+    setStatus(5, '正在下载补丁（' + kb + ' KB）…');
     try {
       const pr = await bridge.applyPatch(st.patch);
       if (pr && pr.ok) {
-        toast('✅ 快速更新完成（' + (pr.applied || 0) + ' 个文件），正在重启…', 'ok');
-        if (prog) prog.style.display = 'none';
-        setTimeout(() => { try { bridge.relaunch(); } catch (e) {} }, 1500);
+        setStatus(100, '✅ 更新完成（' + (pr.applied || 0) + ' 个文件），正在重启…', 'var(--ok, #6fdd8f)');
+        if (btn) { btn.textContent = '⏳ 重启中…'; btn.disabled = true; }
+        if (notes) notes.textContent = '更新成功！程序正在重启，请稍候…（如果 10 秒后没自动打开，请手动双击桌面图标）';
+        toast('✅ 更新完成，正在重启…', 'ok');
+        // 稍等让用户看清提示，再触发重启
+        setTimeout(async () => {
+          try {
+            const rr = await bridge.relaunch();
+            if (rr && rr.ok === false) {
+              // 重启失败 → 告诉用户手动启动
+              setStatus(100, '✅ 更新完成，但自动重启失败：' + (rr.error || '') + '，请手动双击桌面图标启动', 'var(--err)');
+              if (btn) { btn.textContent = '✅ 已完成（请手动启动）'; btn.disabled = false; }
+            }
+          } catch (e) {
+            setStatus(100, '✅ 更新完成，但自动重启失败：' + e.message + '，请手动双击桌面图标启动', 'var(--err)');
+            if (btn) { btn.textContent = '✅ 已完成（请手动启动）'; btn.disabled = false; }
+          }
+        }, 1200);
         return;
       }
-      console.warn('[update] 补丁失败，回退整包:', pr && pr.error);
-      showToastIfManual(st, '补丁更新失败（' + ((pr && pr.error) || '未知原因') + '），改用完整下载');
+      // 补丁失败
+      console.warn('[update] 补丁失败:', pr && pr.error);
+      setStatus(0, '补丁失败：' + ((pr && pr.error) || '未知原因') + '，准备改用完整包…', 'var(--err)');
+      await new Promise((r) => setTimeout(r, 1200));
     } catch (e) {
       console.warn('[update] 补丁异常:', e);
+      setStatus(0, '补丁异常：' + e.message + '，准备改用完整包…', 'var(--err)');
+      await new Promise((r) => setTimeout(r, 1200));
     }
   }
 
-
-  // ★ 没有可用补丁时，先问一句再下 577 MB，不能让用户莫名其妙下完全部
+  // ==================== ② 整包下载 ====================
   if (!hasPatch) {
     const ok = confirm(
       '没有发现适用于当前版本（v' + (st.current || '?') + '）的增量补丁。\n\n' +
-      '只能下载完整安装包（约 577 MB），下载后会打开安装向导。\n\n' +
+      '只能下载完整安装包（约 577 MB），下载完需要手动点「立即安装」。\n\n' +
       '是否继续？'
     );
     if (!ok) {
       if (btn) { btn.disabled = false; btn.textContent = '⬇ 下载完整安装包'; }
-      if (prog) prog.style.display = 'none';
+      if (box) box.style.display = 'none';
       return;
     }
   }
 
-  // ② 整包（补丁缺失或补丁失败时才会走到这里）
   try {
+    if (btn) btn.textContent = '⏳ 下载中…';
+    setStatus(0, '正在下载完整安装包（约 577 MB）…');
     const r = await bridge.downloadUpdate(st.url);
+
     if (r && r.ok) {
-      // 安装包下载好了,但不再自动静默安装。
-      // 原因：NSIS 静默安装会先卸载旧版本再重装,用户看到「卸载了一堆程序」会以为出问题。
       if (r.needManualInstall) {
+        // 下载完成 → 按钮变成「立即安装」，并且高亮提示
+        setStatus(100, '✅ 下载完成（' + Math.round((r.size || 0) / 1048576) + ' MB），点下方「📦 立即安装」完成升级', 'var(--ok, #6fdd8f)');
+        if (notes) notes.textContent = '安装包已下载到：' + (r.path || '');
         if (btn) {
           btn.disabled = false;
           btn.textContent = '📦 立即安装';
+          btn.style.background = 'var(--ok, #6fdd8f)';
+          btn.style.color = '#fff';
           btn.onclick = async () => {
+            btn.disabled = true;
+            btn.textContent = '⏳ 启动中…';
             const rr = await bridge.runUpdateInstaller(r.path);
-            if (rr && rr.ok) toast('安装程序已启动,按向导完成升级', 'ok');
-            else toast('启动安装程序失败：' + ((rr && rr.error) || ''), 'err');
+            if (rr && rr.ok) {
+              setStatus(100, '安装程序已启动，按向导点击「下一步」完成升级');
+              btn.textContent = '✅ 已启动安装程序';
+              toast('安装程序已启动，按向导完成升级即可', 'ok');
+            } else {
+              btn.disabled = false;
+              btn.textContent = '📦 立即安装';
+              setStatus(100, '启动安装程序失败：' + ((rr && rr.error) || '未知错误'), 'var(--err)');
+              toast('启动安装程序失败：' + ((rr && rr.error) || ''), 'err');
+            }
           };
         }
-        toast('✅ 安装包已下载,点「立即安装」启动安装程序', 'ok');
-        if (prog) prog.style.display = 'none';
+        toast('✅ 安装包已下载完成，点「立即安装」完成升级', 'ok');
       } else {
+        setStatus(100, '✅ 下载完成');
         toast(t('update.downloadedStart'), 'ok');
       }
     } else {
-      toast('❌ ' + ((r && r.error) || '下载失败'), 'err');
-      if (btn) { btn.disabled = false; btn.textContent = t('update.go'); }
+      const err = (r && r.error) || '下载失败';
+      setStatus(0, '❌ ' + err, 'var(--err)');
+      if (notes) notes.textContent = '下载失败。可以点「稍后」关闭，然后手动去 Release 页面下载：' + (st.url || '');
+      if (btn) { btn.disabled = false; btn.textContent = '🔄 重试下载'; }
+      toast('❌ ' + err, 'err');
     }
   } catch (e) {
+    setStatus(0, '❌ 下载异常：' + e.message, 'var(--err)');
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 重试下载'; }
     toast('❌ ' + e.message, 'err');
-    if (btn) { btn.disabled = false; btn.textContent = t('update.go'); }
   }
 }
 function initUpdater() {
@@ -210,9 +262,18 @@ function initUpdater() {
   });
   // 下载进度
   bridge.onUpdateProgress((p) => {
+    const banner = document.getElementById('update-banner');
+    const box = document.getElementById('update-progress-box');
     const bar = document.getElementById('update-bar');
     const txt = document.getElementById('update-progress-text');
-    if (bar) bar.style.width = (p.percent || 0) + '%';
+    // 横幅必须是显示状态，否则进度条算不出宽度
+    if (banner && banner.classList.contains('hidden')) banner.classList.remove('hidden');
+    if (box) box.style.display = '';
+    if (bar) {
+      const pct = p.percent || 0;
+      bar.style.width = pct + '%';
+      bar.style.minWidth = pct > 0 ? '2px' : '0';
+    }
     if (txt) txt.textContent = p.text || '';
     if (p.stage === 'ready') {
       const goBtn = document.getElementById('btn-update-go');
@@ -419,7 +480,7 @@ async function renderHome() {
         <div>🎉 <span data-i18n="update.found"></span> <b id="update-version"></b></div>
         <div id="update-notes" style="font-size:12px;opacity:.75;margin-top:4px"></div>
         <div id="update-progress-box" style="display:none;margin-top:8px">
-          <div class="gauge" style="height:6px"><div id="update-bar" style="width:0%"></div></div>
+          <div class="gauge" style="height:6px;width:100%"><div id="update-bar" style="width:0%"></div></div>
           <div id="update-progress-text" style="font-size:12px;opacity:.75;margin-top:4px"></div>
         </div>
       </div>

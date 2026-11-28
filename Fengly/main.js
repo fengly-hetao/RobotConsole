@@ -15,27 +15,6 @@ try {
 } catch (_e) {}
 
 // =====================================================================
-// 单实例锁：程序只能运行一个实例。
-// 第二次启动时聚焦到已有窗口，避免双实例冲突、splash 卡「升级完成」。
-// =====================================================================
-const _gotSingleLock = app.requestSingleInstanceLock();
-if (!_gotSingleLock) {
-  app.quit();
-} else {
-  app.on('second-instance', () => {
-    // 已有实例收到第二次启动请求时，聚焦主窗口
-    if (app.hasSingleInstanceLock()) {
-      const wins = BrowserWindow.getAllWindows();
-      if (wins.length) {
-        const w = wins[0];
-        if (w.isMinimized()) w.restore();
-        w.focus();
-      }
-    }
-  });
-}
-
-// =====================================================================
 // 渲染初始化（Electron 28 · Win10 1809+ 兼容）
 // GPU 禁用已在文件最顶部完成（appendArgument 硬编码），这里只保留
 // 后台窗口不降级渲染等通用开关。
@@ -124,13 +103,39 @@ console.error = function (...args) { _origErr(...args); _writeLog('ERROR', args)
 console.log('[main] 日志文件: ' + LOG_FILE);
 
 // 单实例锁
+// ★ 重启场景的特殊处理：
+//   点「立即重启」后旧进程会写一个 .relaunching 标记文件再退出。
+//   如果新进程在启动时发现这个标记「是最近 60 秒内写的」，说明是自己在重启，
+//   此时即使拿不到单实例锁也要继续跑（否则会立即自杀，用户看到的就是"重启没反应"）。
 console.log('[main] electron starting, version=', process.versions.electron);
+
+let _isRelaunching = false;
+try {
+  const _flag = path.join(app.getPath('userData'), '.relaunching');
+  if (fs.existsSync(_flag)) {
+    const _ts = parseInt(fs.readFileSync(_flag, 'utf8').trim(), 10) || 0;
+    const _age = Date.now() - _ts;
+    if (_age >= 0 && _age < 60000) {
+      _isRelaunching = true;
+      console.log('[main] 检测到重启标记（' + Math.round(_age / 1000) + ' 秒前），本次是自动重启');
+    }
+    try { fs.unlinkSync(_flag); } catch (e) {}
+  }
+} catch (e) {
+  console.log('[main] 读取重启标记失败: ' + e.message);
+}
+
 const gotLock = app.requestSingleInstanceLock();
 console.log('[main] single instance lock =', gotLock);
-if (!gotLock) {
+
+if (!gotLock && !_isRelaunching) {
   console.log('[main] another instance exists, quitting');
   app.quit();
 } else {
+  if (!gotLock && _isRelaunching) {
+    // 重启时旧进程可能还没完全退出，锁拿不到，但我们知道自己要起来
+    console.log('[main] 重启中，忽略单实例锁冲突，继续启动');
+  }
   bootstrap();
 }
 
@@ -742,12 +747,82 @@ function bootstrap() {
       } catch (err) { return { ok: false, error: err.message }; }
     });
     // ---------- 重启应用（补丁应用后用） ----------
+    // ★ 踩过的坑（按顺序）：
+    //   1) app.relaunch() + app.exit(0) —— Windows 上经常不生效
+    //   2) 直接 spawn 新实例 —— 旧进程持有单实例锁，新实例自杀
+    //   3) cmd 批处理 —— 中文路径被 ascii 编码弄乱；timeout 命令报错
+    //   4) PowerShell 脚本 + detached spawn —— 脚本能跑，但 Electron 进程继承不到正确的会话
+    //
+    //   最终方案：给单实例锁加「重启宽限期」。
+    //   点重启 → 设置 relaunching 标志 + 记录时间戳 → 退出
+    //   新进程启动时，如果检测到「最近的 relaunch 标记」，就忽略单实例锁冲突。
+    //   这样新进程可以正常起来，不会自杀。
     ipcMain.handle('app:relaunch', () => {
       try {
-        app.relaunch();
-        setTimeout(() => app.exit(0), 300);
+        const { spawn } = require('child_process');
+        const os = require('os');
+
+        const exePath = process.execPath;
+        const appArgs = [];
+        if (!app.isPackaged) {
+          appArgs.push(path.join(process.resourcesPath || app.getAppPath(), 'app'));
+        }
+
+        console.log('[main] 准备重启:', exePath, appArgs.join(' '));
+
+        // 停掉子进程（NapCat / QQ / python），避免文件占用
+        try { if (procman) { procman.stopNapcat(); procman.stopBot(); } } catch (e) {}
+
+        // ① 写「重启标记」：新进程看到这个标记就知道是自己在重启，忽略单实例锁
+        const flagPath = path.join(app.getPath('userData'), '.relaunching');
+        try {
+          fs.writeFileSync(flagPath, String(Date.now()), 'utf8');
+          console.log('[main] 已写入重启标记: ' + flagPath);
+        } catch (e) {
+          console.error('[main] 写重启标记失败: ' + e.message);
+        }
+
+        // ② 用 PowerShell 脚本延迟启动（中文路径安全）
+        const psPath = path.join(os.tmpdir(), 'rc-restart-' + Date.now() + '.ps1');
+        const q = (s) => "'" + String(s).replace(/'/g, "''") + "'";
+        const psLines = [
+          '# RobotConsole 自动重启脚本',
+          'Start-Sleep -Milliseconds 2000',
+          '$exe = ' + q(exePath),
+          '$a = @(' + appArgs.map(q).join(', ') + ')',
+          'try {',
+          '  if ($a.Count -gt 0) {',
+          '    Start-Process -FilePath $exe -ArgumentList $a -WorkingDirectory (Split-Path $exe)',
+          '  } else {',
+          '    Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe)',
+          '  }',
+          '} catch { explorer.exe $exe }',
+          'Start-Sleep -Seconds 2',
+          'Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue',
+        ];
+        fs.writeFileSync(psPath, '\ufeff' + psLines.join('\r\n') + '\r\n', 'utf8');
+        console.log('[main] 重启脚本: ' + psPath);
+
+        const child = spawn('powershell.exe', [
+          '-NoProfile', '-ExecutionPolicy', 'Bypass',
+          '-WindowStyle', 'Hidden', '-File', psPath,
+        ], { detached: true, stdio: 'ignore', windowsHide: true });
+        child.unref();
+        console.log('[main] 重启脚本已启动 pid=' + child.pid);
+
+        // ③ 兜底：如果脚本没生效，用 app.relaunch 再试一次
+        try { app.relaunch(); } catch (e) {}
+
+        // ④ 退出当前进程
+        setTimeout(() => {
+          try { app.exit(0); } catch (e) { process.exit(0); }
+        }, 500);
+
         return { ok: true };
-      } catch (err) { return { ok: false, error: err.message }; }
+      } catch (err) {
+        console.error('[main] relaunch 失败:', err);
+        return { ok: false, error: err.message };
+      }
     });
     // ---------- 增量补丁 ----------
     ipcMain.handle('update:applyPatch', async (e, args) => {
