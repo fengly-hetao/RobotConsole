@@ -156,7 +156,9 @@ function bootstrap() {
       '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.ico': 'image/x-icon',
       '.map': 'application/json', '.wasm': 'application/wasm'
     };
-    server = http.createServer((req, res) => {
+
+    // 请求处理器（创建一次，端口重试时复用）
+    const handler = (req, res) => {
       if (req.url.startsWith('/media/')) {
         try {
           const seg = decodeURIComponent(req.url.split('?')[0]).split('/').filter(Boolean);
@@ -186,14 +188,50 @@ function bootstrap() {
       try {
         let urlPath = decodeURIComponent(req.url.split('?')[0]);
         if (urlPath === '/') urlPath = '/index.html';
-        const full = path.join(rendererDir, path.normalize(urlPath).replace(/^([/\\])+/, ''));
+        const full = path.join(rendererDir, path.normalize(urlPath).replace(/^([/\\\\])+/, ''));
         if (!full.startsWith(rendererDir)) { res.writeHead(403); res.end('forbidden'); return; }
         if (!fs.existsSync(full) || !fs.statSync(full).isFile()) { res.writeHead(404); res.end('not found'); return; }
         res.writeHead(200, { 'Content-Type': mime[path.extname(full).toLowerCase()] || 'application/octet-stream' });
         fs.createReadStream(full).pipe(res);
       } catch (e) { res.writeHead(500); res.end(e.message); }
+    };
+
+    // ★ 端口 0 = 系统随机分配，但系统可能分到 Chrome 的「受限端口」黑名单里的端口，
+    //   例如 6667（IRC）、6000、10080 等。Electron 会以 ERR_UNSAFE_PORT(-312) 拒绝加载，
+    //   结果就是整个界面白屏、所有按钮点不动，用户以为功能坏了。
+    const UNSAFE_PORTS = new Set([
+      1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95,
+      101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 138, 139, 143,
+      161, 179, 389, 427, 465, 512, 513, 514, 515, 526, 530, 531, 532, 540, 548, 554, 556,
+      563, 587, 601, 636, 989, 990, 993, 995, 1719, 1720, 1723, 2049, 3659, 4045, 5060, 5061,
+      6000, 6566, 6665, 6666, 6667, 6668, 6669, 6697, 10080
+    ]);
+
+    return new Promise((resolve) => {
+      const tryListen = (attempt) => {
+        const srv = http.createServer(handler);
+        srv.listen(0, '127.0.0.1', () => {
+          const p = srv.address().port;
+          if (UNSAFE_PORTS.has(p)) {
+            console.log('[main] 端口 ' + p + ' 在 Electron 受限名单里，重新分配');
+            try { srv.close(); } catch (e) {}
+            if (attempt < 12) return setTimeout(() => tryListen(attempt + 1), 15);
+            console.error('[main] 连续多次分配到受限端口，放弃');
+            return resolve(0);
+          }
+          server = srv;
+          serverPort = p;
+          console.log('[main] 渲染层端口: ' + p);
+          resolve(p);
+        });
+        srv.on('error', (e) => {
+          console.error('[main] 端口监听失败:', e.message);
+          if (attempt < 12) setTimeout(() => tryListen(attempt + 1), 50);
+          else resolve(0);
+        });
+      };
+      tryListen(0);
     });
-    return new Promise((resolve) => server.listen(0, '127.0.0.1', () => { serverPort = server.address().port; resolve(serverPort); }));
   }
 
   // ---------- 原子写入（避免 JSON/配置损坏） ----------
