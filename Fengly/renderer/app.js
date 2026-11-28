@@ -92,11 +92,42 @@ async function handleUpdateDownload(st, btn, hasPatch) {
     }
   }
 
-  // ② 整包
+
+  // ★ 没有可用补丁时，先问一句再下 577 MB，不能让用户莫名其妙下完全部
+  if (!hasPatch) {
+    const ok = confirm(
+      '没有发现适用于当前版本（v' + (st.current || '?') + '）的增量补丁。\n\n' +
+      '只能下载完整安装包（约 577 MB），下载后会打开安装向导。\n\n' +
+      '是否继续？'
+    );
+    if (!ok) {
+      if (btn) { btn.disabled = false; btn.textContent = '⬇ 下载完整安装包'; }
+      if (prog) prog.classList.add('hidden');
+      return;
+    }
+  }
+
+  // ② 整包（补丁缺失或补丁失败时才会走到这里）
   try {
     const r = await bridge.downloadUpdate(st.url);
     if (r && r.ok) {
-      toast(t('update.downloadedStart'), 'ok');
+      // 安装包下载好了,但不再自动静默安装。
+      // 原因：NSIS 静默安装会先卸载旧版本再重装,用户看到「卸载了一堆程序」会以为出问题。
+      if (r.needManualInstall) {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '📦 立即安装';
+          btn.onclick = async () => {
+            const rr = await bridge.runUpdateInstaller(r.path);
+            if (rr && rr.ok) toast('安装程序已启动,按向导完成升级', 'ok');
+            else toast('启动安装程序失败：' + ((rr && rr.error) || ''), 'err');
+          };
+        }
+        toast('✅ 安装包已下载,点「立即安装」启动安装程序', 'ok');
+        if (prog) prog.classList.add('hidden');
+      } else {
+        toast(t('update.downloadedStart'), 'ok');
+      }
     } else {
       toast('❌ ' + ((r && r.error) || '下载失败'), 'err');
       if (btn) { btn.disabled = false; btn.textContent = t('update.go'); }
@@ -143,13 +174,18 @@ function initUpdater() {
         if (notesEl) notesEl.textContent = st.notes || '';
         const urlOk = st.url && /^https?:\/\//i.test(st.url) && !st.url.includes('你的下载链接');
         const goBtn = document.getElementById('btn-update-go');
-        if (goBtn) goBtn.style.display = urlOk ? '' : 'none';
-        const pageBtn = document.getElementById('btn-update-page');
-        if (pageBtn) pageBtn.style.display = urlOk ? 'none' : '';
         const hasPatch = !!(st.patch && st.patch.url && st.patch.sha256);
-        if (goBtn && hasPatch) {
-          const kb = Math.max(1, Math.round((st.patch.size || 0) / 1024));
-          goBtn.textContent = "⚡ 快速更新（仅 " + kb + " KB）";
+        const kb = Math.max(1, Math.round(((st.patch && st.patch.size) || 0) / 1024));
+        if (goBtn && urlOk) {
+          if (hasPatch) {
+            // 有补丁：主按钮就是补丁，不提供整包入口（除非补丁失败）
+            goBtn.textContent = "⚡ 快速更新（仅 " + kb + " KB）";
+            goBtn.title = "只下载变化的文件，不重新安装整个程序";
+          } else {
+            // 没有补丁：明确告诉用户要下整包，不是偷偷下
+            goBtn.textContent = "⬇ 下载完整安装包";
+            goBtn.title = "当前版本没有对应的增量补丁，只能下载完整安装包（约 577 MB）";
+          }
         }
         if (goBtn && urlOk) {
           goBtn.onclick = async () => { await handleUpdateDownload(st, goBtn, hasPatch); };
@@ -1006,7 +1042,6 @@ async function renderResources() {
     el.innerHTML = `      <div class="grid" id="res-metrics" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px"></div>
       <div class="grid grid-2" style="margin-top:16px">
         <div class="card" style="margin-bottom:14px">
-        <div class="card" style="margin-bottom:14px">
           <h3>🤖 <span>RobotConsole 版本</span></h3>
           <p class="hint">检查控制台自身是否有新版本。有新版本时会在主界面顶部弹出提示，也可以在这里手动检查。</p>
           <div id="rc-version-info" style="margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--bg-2);font-size:13px">
@@ -1023,6 +1058,7 @@ async function renderResources() {
           </div>
           <div id="rc-update-notes" style="display:none;margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--bg-3);font-size:12px;white-space:pre-wrap;max-height:160px;overflow-y:auto"></div>
         </div>
+        <div class="card" style="margin-bottom:14px">
           <h3>🐧 <span>QQ 版本与更新</span></h3>
           <p class="hint">检查本地 QQ 版本是否需要更新。NapCat 需要特定 QQ 版本，版本不匹配会导致扫码失败或启动不了。</p>
           <div id="qq-version-info" style="margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--bg-2);font-size:13px">
@@ -3817,7 +3853,38 @@ function sendEls() {
   };
 }
 
-// 重新绑定按钮（只绑一次）
+  // ★ 防御性修复：发送完成后强制恢复输入框可编辑状态。
+  //   现象：发送一次后光标在但点不进去、打不了字。
+  //   代码里没有 disable，所以可能是渲染层/输入法/焦点问题导致，
+  //   这里在每次发送结束时把一切可能挡住输入的状态都重置一遍。
+  function restoreSendInput() {
+    try {
+      const t = document.getElementById('send-text');
+      if (!t) return;
+      t.readOnly = false;
+      t.disabled = false;
+      t.style.pointerEvents = '';
+      t.style.userSelect = '';
+      t.style.opacity = '';
+      t.removeAttribute('readonly');
+      t.removeAttribute('disabled');
+      // 父级如果有 pointer-events:none 或 inert，也一并解除
+      let p = t.parentElement;
+      while (p && p !== document.body) {
+        if (p.style && p.style.pointerEvents === 'none') p.style.pointerEvents = '';
+        p.removeAttribute && p.removeAttribute('inert');
+        p = p.parentElement;
+      }
+      // 重新聚焦，让用户能直接继续打字
+      t.focus();
+      const len = t.value.length;
+      try { t.setSelectionRange(len, len); } catch (e) {}
+    } catch (e) {
+      console.warn('[send] 恢复输入框失败:', e);
+    }
+  }
+
+  // 重新绑定按钮（只绑一次）
 function bindSendButtons() {
   const e = sendEls();
   if (e.goBtn && !e.goBtn._bound) {
@@ -3910,15 +3977,15 @@ function getSelectedGroups() {
 async function doSendMessage() {
   const e = sendEls();
   const text = (e.text ? e.text.value : '').trim();
-  if (!text) { toast('请先输入要发的内容', 'err'); return; }
+  if (!text) { toast('请先输入要发的内容', 'err'); restoreSendInput(); return; }
 
   const groups = getSelectedGroups();
   const useAi = !!(e.ai && e.ai.checked);
   const targetCount = groups.length || SEND_UI.groupsData.length;
-  if (!targetCount) { toast('没有可发送的群', 'err'); return; }
+  if (!targetCount) { toast('没有可发送的群', 'err'); restoreSendInput(); return; }
 
   const modeText = useAi ? '（先用 AI 改写成人格语气）' : '（原文发送）';
-  if (!confirm('确定发送到 ' + targetCount + ' 个群？\n' + modeText)) return;
+  if (!confirm('确定发送到 ' + targetCount + ' 个群？\n' + modeText)) { restoreSendInput(); return; }
 
   if (e.goBtn) { e.goBtn.disabled = true; e.goBtn.textContent = useAi ? 'AI 改写中…' : '发送中…'; }
   if (e.result) e.result.innerHTML = '';
@@ -3932,7 +3999,7 @@ async function doSendMessage() {
 
   if (e.goBtn) { e.goBtn.disabled = false; e.goBtn.textContent = '📤 发送'; }
 
-  if (!e.result) return;
+  if (!e.result) { restoreSendInput(); return; }
   if (r && r.ok) {
     const n = (r.sent || []).length;
     const bad = (r.failed || []).length;
@@ -3950,12 +4017,15 @@ async function doSendMessage() {
           : '') +
       '</div>';
     if (e.text) e.text.value = '';
+    restoreSendInput();
     toast('发送完成', 'ok');
   } else {
     e.result.innerHTML =
       '<div style="padding:10px 12px;border-radius:10px;background:var(--bg-2);color:var(--err);font-size:13px">' +
         '❌ ' + esc((r && r.error) || '发送失败') + '</div>';
   }
+  // 兜底：无论什么情况，函数结束时都确保输入框可用
+  restoreSendInput();
 }
 
 async function doPreviewMessage() {

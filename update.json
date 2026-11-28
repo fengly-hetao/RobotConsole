@@ -1,77 +1,91 @@
 {
-  "version": "1.9.13",
-  "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/%E6%9C%BA%E5%99%A8%E4%BA%BA%E6%8E%A7%E5%88%B6%E5%8F%B0-Setup-1.9.13.exe",
+  "version": "1.9.14",
+  "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.14/RobotConsole-Setup-1.9.14.exe",
   "downloadPage": "https://4001880759.share.123pan.cn/123pan/ijXeMh-iChe3",
   "extraDownloadPages": [
-    { "label": "安装版（.exe）", "url": "https://4001880759.share.123pan.cn/123pan/ijXeMh-iChe3" },
-    { "label": "免安装版（.zip）", "url": "https://4001880759.share.123pan.cn/123pan/ijXeMh-iChe3" }
+    {
+      "label": "GitHub Release",
+      "url": "https://github.com/fengly-hetao/RobotConsole/releases/tag/v1.9.14"
+    },
+    {
+      "label": "123 网盘",
+      "url": "https://4001880759.share.123pan.cn/123pan/ijXeMh-iChe3"
+    }
   ],
   "patch": [
     {
       "from": "1.9.5",
-      "to": "1.9.13",
-      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.12-to-1.9.13.zip",
-      "size": 32190,
-      "sha256": "a1fcdf7088aadc68a294431df4f6009537c5075fb7a7c8987655cce8c4947f71",
+      "to": "1.9.14",
+      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.14/patch-1.9.5-to-1.9.14.zip",
+      "size": 180357,
+      "sha256": "cf4df4de3af267361542e26d5abdebc46ba36df35adcaa32233f6a2454afe5b3",
       "deleted": []
     },
     {
       "from": "1.9.6",
-      "to": "1.9.13",
-      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.12-to-1.9.13.zip",
-      "size": 32190,
-      "sha256": "a1fcdf7088aadc68a294431df4f6009537c5075fb7a7c8987655cce8c4947f71",
+      "to": "1.9.14",
+      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.14/patch-1.9.6-to-1.9.14.zip",
+      "size": 154647,
+      "sha256": "ea8c251980a26ab9a4e4807ca5d758d1aa7d69a7bd6c0dda14d460d3a97b6977",
       "deleted": []
     },
     {
       "from": "1.9.7",
-      "to": "1.9.13",
-      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.12-to-1.9.13.zip",
-      "size": 32190,
-      "sha256": "a1fcdf7088aadc68a294431df4f6009537c5075fb7a7c8987655cce8c4947f71",
+      "to": "1.9.14",
+      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.14/patch-1.9.7-to-1.9.14.zip",
+      "size": 161139,
+      "sha256": "9dcd02c457208e6c1e4bbb8c395b4b0c06477c8976da622bf5382c2c9709a696",
       "deleted": []
     },
     {
       "from": "1.9.8",
-      "to": "1.9.13",
-      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.12-to-1.9.13.zip",
-      "size": 32190,
-      "sha256": "a1fcdf7088aadc68a294431df4f6009537c5075fb7a7c8987655cce8c4947f71",
+      "to": "1.9.14",
+      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.14/patch-1.9.8-to-1.9.14.zip",
+      "size": 178481,
+      "sha256": "cd85a21c92277a0b3c08237bb64befae107771f0d1f8ca106c46ea89b86f6aab",
       "deleted": []
     },
     {
       "from": "1.9.9",
-      "to": "1.9.13",
-      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.12-to-1.9.13.zip",
-      "size": 32190,
-      "sha256": "a1fcdf7088aadc68a294431df4f6009537c5075fb7a7c8987655cce8c4947f71",
+      "to": "1.9.14",
+      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.14/patch-1.9.9-to-1.9.14.zip",
+      "size": 115500,
+      "sha256": "40dd96ca0eff3129d3d4d37abf877f9ba2686b3f00fb4d98c9e295fe018fb844",
       "deleted": []
     },
     {
       "from": "1.9.10",
-      "to": "1.9.13",
-      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.12-to-1.9.13.zip",
-      "size": 32190,
-      "sha256": "a1fcdf7088aadc68a294431df4f6009537c5075fb7a7c8987655cce8c4947f71",
+      "to": "1.9.14",
+      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.14/patch-1.9.10-to-1.9.14.zip",
+      "size": 100114,
+      "sha256": "5837c55e8abd2b9f007a895c9f4434cc48634814aa9cb66fe98f3949aeb818e8",
       "deleted": []
     },
     {
       "from": "1.9.11",
-      "to": "1.9.13",
-      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.12-to-1.9.13.zip",
-      "size": 32190,
-      "sha256": "a1fcdf7088aadc68a294431df4f6009537c5075fb7a7c8987655cce8c4947f71",
+      "to": "1.9.14",
+      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.14/patch-1.9.11-to-1.9.14.zip",
+      "size": 95219,
+      "sha256": "68cad447e044d69e19ea279e289ec6d7bb2e1b8f59d7e5d6e5d6ab5ea048d20a",
       "deleted": []
     },
     {
       "from": "1.9.12",
-      "to": "1.9.13",
-      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.12-to-1.9.13.zip",
-      "size": 32190,
-      "sha256": "a1fcdf7088aadc68a294431df4f6009537c5075fb7a7c8987655cce8c4947f71",
+      "to": "1.9.14",
+      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.14/patch-1.9.12-to-1.9.14.zip",
+      "size": 95219,
+      "sha256": "68cad447e044d69e19ea279e289ec6d7bb2e1b8f59d7e5d6e5d6ab5ea048d20a",
+      "deleted": []
+    },
+    {
+      "from": "1.9.13",
+      "to": "1.9.14",
+      "url": "https://github.com/fengly-hetao/RobotConsole/releases/download/v1.9.14/patch-1.9.13-to-1.9.14.zip",
+      "size": 92580,
+      "sha256": "7b341974f6bdac678fa910a52b8aeb608aca544cda11883e9aa3627379d93151",
       "deleted": []
     }
   ],
-  "notes": "v1.9.13\n\n【重要修复】配置自动补全 —— 解决「检查更新永远失败」\n· 每次启动自动检查设置文件，发现缺失或空值就补上默认值\n· 典型场景：从老版本升级 / 重装系统 / 换电脑后，updateUrl 变成空字符串\n  导致程序不知道去哪查更新，界面只显示「检查失败」\n· 现在会自动补成 https://github.com/fengly-hetao/RobotConsole 并写回文件\n· 只补空的，不会覆盖你自己填的内容\n\n启动日志里能看到：\n  [config] 已补全 1 项缺失配置：\n  [config]   + updateUrl = \"https://github.com/fengly-hetao/RobotConsole\"\n\n【继承 1.9.12】\n· 检查失败时显示具体原因（超时 / DNS 失败 / HTTP 404 等）\n\n【继承 1.9.11】\n· 修复界面白屏 / 所有按钮点不动（端口撞上浏览器受限名单）\n\n【继承 1.9.10】\n· @机器人聊天没反应（自由聊天默认开启）\n· 回复被拆成 4~6 条刷屏（现在最多 2 条）\n· 增量补丁漏文件（Python 插件修复全部丢失）\n\n重要说明：\n· NapCat 已于 2026-11-14 停止更新并删库，当前内置 v4.18.41 本地自包含\n· QQ 需保持 9.9.33（本程序会自动锁定 runtime QQ 防止被升级）",
+  "notes": "v1.9.14\n\n【重要】下载源改用 GitHub Release\n· 不再依赖 123 网盘 CDN（有每日限制）\n· GitHub Release 免费不限流量\n· 程序会自动套国内镜像（gh-proxy / ghfast / ghproxy），国内也能快速下载\n\n【修复】AI 发送输入框卡死\n· 发送一次后光标在但点不进去、打不了字\n· 现在发送完会自动恢复可编辑并聚焦，可以继续打字\n\n【修复】更新时不再自动静默重装\n· 之前下载完整包后直接静默安装，会先卸载旧版本再重装\n· 用户看到「卸载了一堆程序」会以为出问题\n· 现在：有补丁只下补丁（几十 KB），替换文件后重启，不重装\n· 无补丁会弹确认框，同意后才下载完整包，且需要手动点「立即安装」\n\n【修复】系统资源页 QQ 卡片样式错乱\n· 缺少卡片容器导致没圆角、没背景、没内边距，颜色难看\n· 现在 9 张卡片样式统一，全部跟随主题\n\n【继承 1.9.13】\n· 配置自动补全：每次启动检查设置文件，发现缺失/空值就补默认值\n\n【补丁说明】\n· 1.9.5 ~ 1.9.13 用户点更新只需下载 90~176 KB 补丁\n· 更早版本会下载完整安装包（577 MB）\n\n重要说明：\n· NapCat 已于 2026-11-14 停止更新并删库，当前内置 v4.18.41 本地自包含\n· QQ 需保持 9.9.33（本程序会自动锁定 runtime QQ 防止被升级）",
   "force": false
 }

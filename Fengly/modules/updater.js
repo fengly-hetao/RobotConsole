@@ -184,7 +184,31 @@ async function checkUpdate(feedUrl, currentVersion) {
 // 下载更新包到指定目录，返回本地路径
 // 用全局 fetch（走 Chromium 网络栈 → 自动使用系统代理），
 // 所以开了代理/节点的用户下载也能通。
-async function downloadUpdate(dlUrl, destDir, onProgress) {
+  // ★ 下载地址多源：GitHub Release 直连在国内常被墙，这里按顺序试镜像。
+  //   update.json 里只要写 GitHub 原始地址即可，程序自动套镜像。
+  function buildDownloadTargets(dlUrl) {
+    const raw = String(dlUrl || '');
+    const out = [];
+    if (!raw) return out;
+
+    const isGithub = /^https?:\/\/(github\.com|raw\.githubusercontent\.com|objects\.githubusercontent\.com|codeload\.github\.com)\//i.test(raw);
+
+    if (isGithub) {
+      // 国内镜像优先（实测 gh-proxy / ghfast 速度最好）
+      out.push('https://gh-proxy.com/' + raw);
+      out.push('https://ghfast.top/' + raw);
+      out.push('https://ghproxy.net/' + raw);
+      out.push(raw);   // 官方兜底
+    } else {
+      // 非 GitHub（123 网盘等）：原样 + 无镜像
+      out.push(raw);
+    }
+
+    // 去重
+    return Array.from(new Set(out));
+  }
+
+async function downloadUpdateSingle(dlUrl, destDir, onProgress) {
   fs.mkdirSync(destDir, { recursive: true });
 
   // 先确定保存文件名（从 URL 推断；123 网盘直链形如 xxx.exe）
@@ -292,6 +316,37 @@ async function downloadUpdate(dlUrl, destDir, onProgress) {
   fs.writeFileSync(savePath, buf);
   if (onProgress) onProgress(buf.length, buf.length);
   return { path: savePath, size: buf.length, name };
+}
+
+// ★ 对外接口：多源自动重试
+//   GitHub Release 直连在国内常被墙，按 gh-proxy → ghfast → ghproxy → 官方 顺序试。
+//   update.json 里只要写 GitHub 原始地址即可，镜像由这里自动套。
+async function downloadUpdate(dlUrl, destDir, onProgress) {
+  const targets = buildDownloadTargets(dlUrl);
+  if (!targets.length) throw new Error('下载地址为空');
+
+  let lastErr = null;
+  for (let i = 0; i < targets.length; i++) {
+    const url = targets[i];
+    const label = (function (u) {
+      try { return new URL(u).hostname; } catch (e) { return u.substring(0, 30); }
+    })(url);
+    try {
+      if (i > 0) console.log('[download] 切换下载源 ' + (i + 1) + '/' + targets.length + ': ' + label);
+      const r = await downloadUpdateSingle(url, destDir, onProgress);
+      console.log('[download] 成功（源: ' + label + '）');
+      return r;
+    } catch (e) {
+      lastErr = e;
+      console.warn('[download] 源 ' + label + ' 失败: ' + (e && e.message));
+      if (i < targets.length - 1) {
+        // 换下一个源前稍等，避免被限流
+        await new Promise(function (r) { setTimeout(r, 800); });
+      }
+    }
+  }
+
+  throw new Error('所有下载源都失败：' + ((lastErr && lastErr.message) || '未知错误'));
 }
 
 // 修正 123 云盘的 .bak 后缀：xxx.exe.bak → xxx.exe

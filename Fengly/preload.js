@@ -80,6 +80,7 @@ contextBridge.exposeInMainWorld('api', {
   checkUpdate: () => invoke('update:check'),
   downloadUpdate: (url) => invoke('update:download', url),
   openUpdatePage: (url) => invoke('update:openPage', url),
+  runUpdateInstaller: (setupPath) => invoke('update:runInstaller', setupPath),
   backupList: () => invoke('backup:list'),
   backupRead: (id, file) => invoke('backup:read', id, file),
   backupApply: (id, file) => invoke('backup:apply', id, file),

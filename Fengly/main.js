@@ -1000,27 +1000,29 @@ function bootstrap() {
         if (!updater.isExecutable(setupPath)) {
           return { ok: false, error: '下载的文件不是有效的安装程序（可能被网盘拦截），请改用「打开下载页」手动下载' };
         }
-        send({ stage: 'ready', text: '下载完成，正在自动安装…' });
-        // 静默安装（/S）+ 安装完自动重启程序，用户不用手动操作
-        const { spawn } = require('child_process');
-        try {
-          spawn(setupPath, ['/S', '--force-run'], { detached: true, stdio: 'ignore' }).unref();
-        } catch (e2) {
-          // 静默失败就退回到普通安装（会弹界面）
-          spawn(setupPath, [], { detached: true, stdio: 'ignore' }).unref();
-        }
-        // 3 秒后退出当前程序，让安装程序接管（避免文件占用导致安装失败）
-        setTimeout(() => {
-          try {
-            if (procman) { try { procman.stopNapcat(); } catch (e3) {} try { procman.stopBot(); } catch (e3) {} }
-          } catch (e3) {}
-          setTimeout(() => { try { app.exit(0); } catch (e3) {} }, 1200);
-        }, 3000);
-        return { ok: true, path: setupPath, autoInstall: true };
+          send({ stage: 'ready', text: '下载完成，点击「立即安装」启动安装程序' });
+          // ★ 不再自动静默安装（/S）。
+          //   原因：NSIS 静默安装会先卸载旧版本再重装，用户会看到程序被卸了一堆、
+          //   快捷方式和注册信息被重置，误以为出了问题。改成让用户手动点「立即安装」，
+          //   安装界面里能看到"升级"字样，心里有底。
+          //
+          //   另外：如果 update.json 里有匹配的补丁，前端根本不会走到这里（走 applyPatch）。
+          //   只有补丁缺失（版本太老）或补丁失败时才下整包。
+          return { ok: true, path: setupPath, autoInstall: false, needManualInstall: true };
       } catch (err) {
         send({ stage: 'error', text: '下载失败：' + err.message });
         return { ok: false, error: err.message };
       }
+    });
+    ipcMain.handle('update:runInstaller', (e, setupPath) => {
+      try {
+        const p = String(setupPath || '');
+        if (!/\.exe$/i.test(p) || !fs.existsSync(p)) return { ok: false, error: '安装包不存在' };
+        const { spawn } = require('child_process');
+        // 有界面安装，用户能看到"升级"过程，心里有底
+        spawn(p, [], { detached: true, stdio: 'ignore' }).unref();
+        return { ok: true };
+      } catch (err) { return { ok: false, error: err.message }; }
     });
     ipcMain.handle('update:openPage', (e, url) => {
       if (/^https?:\/\//i.test(String(url || ''))) {
