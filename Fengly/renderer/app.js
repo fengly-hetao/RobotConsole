@@ -1071,9 +1071,16 @@ function applyUpdateInfo(st) {
   if (!latestEl) return;   // 页面还没渲染
 
   const has = !!(st && st.hasUpdate);
-  latestEl.textContent = (st && st.latest)
-    ? ('v' + st.latest + (has ? '（有新版本）' : '（已是最新）'))
-    : '检查失败';
+
+  if (st && st.latest) {
+    latestEl.textContent = 'v' + st.latest + (has ? '（有新版本）' : '（已是最新）');
+    latestEl.style.color = '';
+  } else {
+    // 检查失败：必须把具体原因显示出来，否则用户只看到「检查失败」根本没法排查
+    const reason = (st && st.error) ? String(st.error) : '网络不通或更新源不可达';
+    latestEl.textContent = '检查失败：' + reason;
+    latestEl.style.color = 'var(--err)';
+  }
 
   const dlBtn = document.getElementById('btn-rc-download');
   if (dlBtn) dlBtn.style.display = (has && st.url) ? '' : 'none';

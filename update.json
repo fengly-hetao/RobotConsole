@@ -1,6 +1,6 @@
 {
-  "version": "1.9.11",
-  "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/%E6%9C%BA%E5%99%A8%E4%BA%BA%E6%8E%A7%E5%88%B6%E5%8F%B0-Setup-1.9.11.exe",
+  "version": "1.9.12",
+  "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/%E6%9C%BA%E5%99%A8%E4%BA%BA%E6%8E%A7%E5%88%B6%E5%8F%B0-Setup-1.9.12.exe",
   "downloadPage": "https://4001880759.share.123pan.cn/123pan/ijXeMh-iChe3",
   "extraDownloadPages": [
     { "label": "安装版（.exe）", "url": "https://4001880759.share.123pan.cn/123pan/ijXeMh-iChe3" },
@@ -9,53 +9,61 @@
   "patch": [
     {
       "from": "1.9.5",
-      "to": "1.9.11",
-      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.10-to-1.9.11.zip",
-      "size": 33623,
-      "sha256": "6a8f7a81ad9d0c1b5a0a8dea77b50fb328dd1e097dccf8af4e8114f873ac0e2b",
+      "to": "1.9.12",
+      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.11-to-1.9.12.zip",
+      "size": 59746,
+      "sha256": "a7d083b87173fb733cb1a2f1d4e4c5177aac71d7f312b77a51088ab350b474f4",
       "deleted": []
     },
     {
       "from": "1.9.6",
-      "to": "1.9.11",
-      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.10-to-1.9.11.zip",
-      "size": 33623,
-      "sha256": "6a8f7a81ad9d0c1b5a0a8dea77b50fb328dd1e097dccf8af4e8114f873ac0e2b",
+      "to": "1.9.12",
+      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.11-to-1.9.12.zip",
+      "size": 59746,
+      "sha256": "a7d083b87173fb733cb1a2f1d4e4c5177aac71d7f312b77a51088ab350b474f4",
       "deleted": []
     },
     {
       "from": "1.9.7",
-      "to": "1.9.11",
-      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.10-to-1.9.11.zip",
-      "size": 33623,
-      "sha256": "6a8f7a81ad9d0c1b5a0a8dea77b50fb328dd1e097dccf8af4e8114f873ac0e2b",
+      "to": "1.9.12",
+      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.11-to-1.9.12.zip",
+      "size": 59746,
+      "sha256": "a7d083b87173fb733cb1a2f1d4e4c5177aac71d7f312b77a51088ab350b474f4",
       "deleted": []
     },
     {
       "from": "1.9.8",
-      "to": "1.9.11",
-      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.10-to-1.9.11.zip",
-      "size": 33623,
-      "sha256": "6a8f7a81ad9d0c1b5a0a8dea77b50fb328dd1e097dccf8af4e8114f873ac0e2b",
+      "to": "1.9.12",
+      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.11-to-1.9.12.zip",
+      "size": 59746,
+      "sha256": "a7d083b87173fb733cb1a2f1d4e4c5177aac71d7f312b77a51088ab350b474f4",
       "deleted": []
     },
     {
       "from": "1.9.9",
-      "to": "1.9.11",
-      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.10-to-1.9.11.zip",
-      "size": 33623,
-      "sha256": "6a8f7a81ad9d0c1b5a0a8dea77b50fb328dd1e097dccf8af4e8114f873ac0e2b",
+      "to": "1.9.12",
+      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.11-to-1.9.12.zip",
+      "size": 59746,
+      "sha256": "a7d083b87173fb733cb1a2f1d4e4c5177aac71d7f312b77a51088ab350b474f4",
       "deleted": []
     },
     {
       "from": "1.9.10",
-      "to": "1.9.11",
-      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.10-to-1.9.11.zip",
-      "size": 33623,
-      "sha256": "6a8f7a81ad9d0c1b5a0a8dea77b50fb328dd1e097dccf8af4e8114f873ac0e2b",
+      "to": "1.9.12",
+      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.11-to-1.9.12.zip",
+      "size": 59746,
+      "sha256": "a7d083b87173fb733cb1a2f1d4e4c5177aac71d7f312b77a51088ab350b474f4",
+      "deleted": []
+    },
+    {
+      "from": "1.9.11",
+      "to": "1.9.12",
+      "url": "https://4001880759.cdn.123clouddisk.com/4001880759/NapCat/patch-1.9.11-to-1.9.12.zip",
+      "size": 59746,
+      "sha256": "a7d083b87173fb733cb1a2f1d4e4c5177aac71d7f312b77a51088ab350b474f4",
       "deleted": []
     }
   ],
-  "notes": "v1.9.11\n\n【重要修复】界面白屏 / 所有按钮点不动\n· 程序启动时用系统随机端口加载界面，偶尔会分到 6667 这类浏览器受限端口\n· 一旦分到，Electron 直接拒绝加载页面 → 整个界面白屏，点什么都没反应\n· 修复：主动避开所有浏览器受限端口，撞上就重新分配\n· 这是「检查更新失败」「按钮没反应」这类问题的真正原因\n\n【1.9.10 修复的内容】\n· @机器人聊天没反应（自由聊天默认开启）\n· 回复被拆成 4~6 条刷屏（现在最多 2 条）\n· 增量补丁漏文件（之前 Python 插件修复全丢了）\n\n【1.9.9 修复的内容】\n· 改机器人昵称后不理人\n· 正常聊天被当成游戏命令\n· CPU/RAM/DISK/GPU/NET 五项监控\n· 系统清理支持绿色版 + 深度清理\n\n重要说明：\n· NapCat 已于 2026-11-14 停止更新并删库，当前内置 v4.18.41 本地自包含\n· QQ 需保持 9.9.33（本程序会自动锁定 runtime QQ 防止被升级）",
+  "notes": "v1.9.12\n\n【改进】检查更新失败时显示具体原因\n· 之前只显示「检查失败」，看不出是网络问题还是代码问题\n· 现在会显示具体错误，例如：\n  - 检查失败：connect ETIMEDOUT（超时）\n  - 检查失败：getaddrinfo ENOTFOUND（DNS 解析失败）\n  - 检查失败：HTTP 404（链接失效）\n· 失败时也会弹窗提示\n\n这版主要是为了排查问题：如果你的机器上提示检查失败，升级后就能看到具体是哪种错误，把提示文字反馈给作者即可定位。\n\n【继承 1.9.11】\n· 修复界面白屏 / 所有按钮点不动（端口撞上浏览器受限名单）\n\n【继承 1.9.10】\n· @机器人聊天没反应（自由聊天默认开启）\n· 回复被拆成 4~6 条刷屏（现在最多 2 条）\n· 增量补丁漏文件（Python 插件修复全部丢失）\n\n重要说明：\n· NapCat 已于 2026-11-14 停止更新并删库，当前内置 v4.18.41 本地自包含\n· QQ 需保持 9.9.33（本程序会自动锁定 runtime QQ 防止被升级）",
   "force": false
 }
