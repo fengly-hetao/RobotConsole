@@ -26,6 +26,7 @@ from .character import query_character
 from .vision import extract_images, describe_image
 from .tts import synthesize
 from .netease import download_song, set_cookie, cut_for_voice, get_lyrics, search_song
+from .lyric import detect_lyric, format_reply as format_lyric
 from core.config import (get_private_whitelist, get_daily_ai_limit, get_daily_tts_limit, get_daily_song_limit,
                           get_max_reply_length, get_max_tokens, get_temperature, ai_get_float, ai_get_int,
                           get_split_chars, get_min_send_len, get_voice_prob, ai_get, GROUP_IDS)
@@ -747,6 +748,34 @@ async def handle_ai(bot: Bot, event: GroupMessageEvent):
     if quick is not None:
         await ai.finish(MessageSegment.at(user_id) + quick)
         return
+
+    # ==================== 歌词接龙 ====================
+    # 群友 @ 机器人发了句歌词 → 识别出来，先唱下一句，再正常聊天
+    # 开关：FEATURE_LYRIC_ECHO（默认开）
+    try:
+        _lyric_on = ai_get_bool("FEATURE_LYRIC_ECHO", True)
+    except Exception:
+        _lyric_on = True
+
+    if _lyric_on:
+        try:
+            _hit = await detect_lyric(user_msg)
+        except Exception as _e:
+            logger.warning(f"[lyric] 检测异常: {type(_e).__name__}: {_e}")
+            _hit = None
+
+        if _hit:
+            # 先唱下一句
+            _echo = format_lyric(_hit, with_title=True)
+            await bot.send(event, MessageSegment.at(user_id) + _echo)
+            # 稍停一下，再当作普通聊天继续（AI 会带着上下文回应）
+            try:
+                await asyncio.sleep(random.uniform(0.8, 1.4))
+            except Exception:
+                pass
+            # 把歌词上下文塞给 AI，让它知道刚才在接歌词
+            user_msg = (f"【刚才群友发了一句歌《{_hit.song_name}》的歌词，你接了下一句「{_hit.next_line}」】"
+                        f"现在接着正常聊：{user_msg}")
 
     await _stream_reply(bot, event, user_id, user_msg, group=True)
 
