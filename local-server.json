@@ -1,0 +1,10 @@
+{
+  "note": "测试数据（8天前，应被判定过期）",
+  "server": "RobotConsole-LocalCDN",
+  "root": [
+    "1.9.19"
+  ],
+  "updated": 1795185741,
+  "url": "https://test-local-cdn.trycloudflare.com",
+  "updated_readable": "8 天前"
+}
